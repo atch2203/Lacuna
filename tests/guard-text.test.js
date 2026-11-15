@@ -22,13 +22,13 @@ test("known value → stand-in", () => {
 test("unknown value → same-length mask, reported as pending", () => {
   assert.deepEqual(guardText(`key ${KEY}`, PATTERN_DETECTORS, knows({})), {
     text: "key " + "•".repeat(20),
-    pending: [KEY],
+    pending: [{ original: KEY, category: "API_KEY", style: "token" }],
     changed: true,
   });
 });
 
 test("pending is deduplicated", () => {
-  assert.deepEqual(guardText(`${KEY} and ${KEY}`, PATTERN_DETECTORS, knows({})).pending, [KEY]);
+  assert.deepEqual(guardText(`${KEY} and ${KEY}`, PATTERN_DETECTORS, knows({})).pending.map((p) => p.original), [KEY]);
 });
 
 test("clean text unchanged", () => {

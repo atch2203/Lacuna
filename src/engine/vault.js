@@ -21,7 +21,7 @@ export class Vault {
       standIn = style === "fake" ? fakeFor(category, n) : tokenFor(category, n);
     } while (
       this.byStandIn[standIn] !== undefined ||
-      (style === "fake" && isAvoided(standIn))
+      isAvoided(standIn)
     );
 
     this.byOriginal[original] = standIn;

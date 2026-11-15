@@ -7,6 +7,7 @@ import { redact, findRedactions } from "../engine/redact.js";
 import { serialize } from "../shared/serialize.js";
 import { loadState, saveVault } from "../content/store.js";
 import { initialState, reduce, guardOf } from "../guard/share-registry.js";
+import { assignGuardStandIns } from "../guard/guard-vault.js";
 
 // Both message types share one queue so vault writes never interleave.
 // fn(texts, detectors, vault) → result; `disabled(texts)` is returned when off.
@@ -51,12 +52,26 @@ chrome.commands?.onCommand.addListener(async (command) => {
 const shareEvent = (type) => (msg, sender) =>
   sender.tab?.id === undefined
     ? Promise.resolve({ error: "no tab" })
-    : updateGuard({ type, tabId: sender.tab.id, shareId: msg.shareId, surface: msg.surface }).then((guard) => ({ guard }));
+    : updateGuard({ type, tabId: sender.tab.id, frameId: sender.frameId ?? 0, shareId: msg.shareId, surface: msg.surface }).then(
+        (guard) => ({ guard }),
+      );
+
+// Stand-ins for values first seen during a share: session-only, capped map.
+const assignGuard = serialize(async (items) => {
+  const [{ guardVault }, { vault }] = await Promise.all([
+    chrome.storage.session.get("guardVault"),
+    chrome.storage.local.get("vault"),
+  ]);
+  const next = assignGuardStandIns(guardVault, vault, Array.isArray(items) ? items.slice(0, 200) : []);
+  await chrome.storage.session.set({ guardVault: next });
+  return {};
+});
 
 const HANDLERS = {
   "share-started": shareEvent("share-started"),
   "share-ended": shareEvent("share-ended"),
   "share-reset": shareEvent("share-reset"),
+  "guard-stand-ins": (msg) => assignGuard(msg.items),
   "set-manual-guard": (msg) => updateGuard({ type: "manual", on: msg.on }).then((guard) => ({ guard })),
   redact: (msg) => redactTexts(msg.texts).then((texts) => ({ texts })),
   "redact-spans": (msg) => redactSpans(msg.texts).then((spans) => ({ spans })),

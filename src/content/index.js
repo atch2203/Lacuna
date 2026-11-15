@@ -11,8 +11,10 @@ import { redactInFrame } from "./docframe-client.js";
 let restore = makeRestorer([]);
 let restorer = null;
 let enabled = true;
-// While the screen guard is active, stand-ins stay on screen: don't restore.
+// While the screen guard is active (or not yet known), stand-ins stay on
+// screen: don't restore.
 let guardActive = false;
+let guardKnown = false;
 const identity = (text) => text;
 
 function applyState(state) {
@@ -43,9 +45,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.storage.session
   .get("guard")
   .then(({ guard }) => (guardActive = Boolean(guard?.active)))
-  .catch(() => {});
+  .catch(() => {})
+  .finally(() => {
+    guardKnown = true;
+    if (!guardActive) restorer?.refresh();
+  });
 
-restorer = startDomRestorer({ getRestore: () => (guardActive ? identity : restore) });
+restorer = startDomRestorer({ getRestore: () => (guardActive || !guardKnown ? identity : restore) });
 
 startFileInterceptor({
   processFile: redactInFrame,

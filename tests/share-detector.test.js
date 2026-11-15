@@ -32,7 +32,7 @@ function setup({ reject = false, kinds = ["video"] } = {}) {
 test("start is reported with the display surface", async () => {
   const { mediaDevices, reports } = setup();
   await mediaDevices.getDisplayMedia({ video: true });
-  assert.deepEqual(reports, [{ type: "share-started", shareId: "s1", surface: "window" }]);
+  assert.deepEqual(reports.at(-1), { type: "share-started", shareId: "s1", surface: "window" });
 });
 
 test("track 'ended' → share-ended once", async () => {
@@ -40,14 +40,14 @@ test("track 'ended' → share-ended once", async () => {
   await mediaDevices.getDisplayMedia();
   tracks[0].dispatchEvent(new Event("ended"));
   tracks[0].dispatchEvent(new Event("ended"));
-  assert.deepEqual(reports.slice(1), [{ type: "share-ended", shareId: "s1" }]);
+  assert.deepEqual(reports.slice(2), [{ type: "share-ended", shareId: "s1" }]);
 });
 
 test("track.stop() (Meet's Stop presenting) → share-ended, original stop still runs", async () => {
   const { mediaDevices, tracks, reports, stopCalls } = setup();
   await mediaDevices.getDisplayMedia();
   tracks[0].stop();
-  assert.deepEqual(reports.slice(1), [{ type: "share-ended", shareId: "s1" }]);
+  assert.deepEqual(reports.slice(2), [{ type: "share-ended", shareId: "s1" }]);
   assert.deepEqual(stopCalls, ["video"]);
 });
 
@@ -59,17 +59,20 @@ test("ended after stop → still one share-ended", async () => {
   assert.equal(reports.filter((r) => r.type === "share-ended").length, 1);
 });
 
-test("rejected getDisplayMedia → rejects, nothing reported", async () => {
+test("rejected getDisplayMedia → rejects; pending share is ended", async () => {
   const { mediaDevices, reports } = setup({ reject: true });
   await assert.rejects(mediaDevices.getDisplayMedia(), /NotAllowedError/);
-  assert.deepEqual(reports, []);
+  assert.deepEqual(reports, [
+    { type: "share-started", shareId: "s1", surface: "pending" },
+    { type: "share-ended", shareId: "s1" },
+  ]);
 });
 
 test("audio tracks are ignored", async () => {
   const { mediaDevices, tracks, reports } = setup({ kinds: ["video", "audio"] });
   await mediaDevices.getDisplayMedia();
   tracks[1].stop();
-  assert.deepEqual(reports, [{ type: "share-started", shareId: "s1", surface: "window" }]);
+  assert.equal(reports.filter((r) => r.type === "share-ended").length, 0);
 });
 
 test("stop on an untracked track (e.g. camera) reports nothing", async () => {

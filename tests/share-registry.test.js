@@ -23,7 +23,7 @@ test("meeting tab closed → inactive", () => {
 
 test("share-reset drops only that tab", () => {
   const s = run(start(5, "a"), start(6, "b"), { type: "share-reset", tabId: 5 });
-  assert.deepEqual(Object.keys(s.shares), ["6:b"]);
+  assert.deepEqual(Object.keys(s.shares), ["6:0:b"]);
 });
 
 test("manual switch", () => {

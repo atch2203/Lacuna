@@ -5,8 +5,10 @@ import { makeDictionaryDetectors } from "../engine/dictionary.js";
 import { startScreenGuard } from "./screen-guard.js";
 
 const SOURCE = "llm-redactor-share";
+const EMPTY = { byOriginal: {}, byStandIn: {} };
 
-let vault = { byOriginal: {} };
+let vault = EMPTY; // persistent vault (read-only here)
+let guardVault = EMPTY; // session-only stand-ins for values first seen during a share
 let detectors = PATTERN_DETECTORS;
 let enabled = true;
 let active = false;
@@ -22,17 +24,21 @@ window.addEventListener("message", (event) => {
   }
 });
 
-// Leaving the meeting page ends its shares. Only the top frame resets, since
-// the registry tracks shares per tab.
+// A frame going away ends the shares it started (the SW keys shares by frame).
+let reportedShare = false;
+window.addEventListener("message", (e) => {
+  if (e.source === window && e.data?.source === SOURCE && e.data.type === "share-started") reportedShare = true;
+});
 window.addEventListener("pagehide", () => {
-  if (window === window.top) send({ type: "share-reset" });
+  if (reportedShare) send({ type: "share-reset" });
 });
 
 function start() {
   guard = startScreenGuard({
     getDetectors: () => detectors,
-    lookup: (original) => vault.byOriginal?.[original],
-    requestStandIns: (originals) => send({ type: "redact-spans", texts: originals }),
+    lookup: (o) => vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o],
+    isStandIn: (s) => vault.byStandIn?.[s] !== undefined || guardVault.byStandIn?.[s] !== undefined,
+    requestStandIns: (items) => send({ type: "guard-stand-ins", items }),
   });
 }
 
@@ -50,9 +56,16 @@ function setDictionary(dictionary) {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "session" && changes.guard) {
-    active = Boolean(changes.guard.newValue?.active);
-    apply();
+  if (area === "session") {
+    if (changes.guardVault) {
+      guardVault = changes.guardVault.newValue ?? EMPTY;
+      guard?.vaultChanged();
+    }
+    if (changes.guard) {
+      active = Boolean(changes.guard.newValue?.active);
+      apply();
+    }
+    return;
   }
   if (area !== "local") return;
   if (changes.settings) {
@@ -64,23 +77,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
     apply({ restart: true });
   }
   if (changes.vault) {
-    vault = changes.vault.newValue ?? { byOriginal: {} };
+    vault = changes.vault.newValue ?? EMPTY;
     guard?.vaultChanged();
   }
 });
 
+// Ask for the guard state first and start masking with pattern detectors right
+// away; once the vault and dictionary arrive, restart with full knowledge.
 (async () => {
-  const local = await chrome.storage.local.get(["vault", "dictionary", "settings"]);
-  vault = local.vault ?? { byOriginal: {} };
+  const sessionP = chrome.storage.session.get(["guard", "guardVault"]).catch(() => ({}));
+  const localP = chrome.storage.local.get(["vault", "dictionary", "settings"]);
+  const session = await sessionP;
+  active = Boolean(session.guard?.active);
+  guardVault = session.guardVault ?? EMPTY;
+  apply();
+  const local = await localP;
+  vault = local.vault ?? EMPTY;
   setDictionary(local.dictionary);
   enabled = local.settings?.enabled !== false;
-  try {
-    const { guard: state } = await chrome.storage.session.get("guard");
-    active = Boolean(state?.active);
-  } catch {
-    // storage.session not yet opened to content scripts (SW hasn't run since
-    // browser start); the onChanged listener picks up the first activation.
-    active = false;
-  }
-  apply();
+  apply({ restart: Boolean(guard) });
 })();

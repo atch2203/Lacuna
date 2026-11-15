@@ -30,7 +30,7 @@ test("known value replaced", () => {
 test("unknown value masked and returned as pending", () => {
   const { guard } = setup({});
   const n = node(ORIGINAL);
-  assert.deepEqual(guard.process(n), [KEY]);
+  assert.deepEqual(guard.process(n).map((p) => p.original), [KEY]);
   assert.equal(n.nodeValue, "key " + "•".repeat(20));
 });
 
