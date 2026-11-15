@@ -3,12 +3,39 @@
 // with the redacted files. Fails open: on error the original file is used.
 import { classifyFile } from "../docs/router.js";
 
-// processFile: (File) => Promise<{ status, file, count }>
-// notify: { working(name) => update(kind, message, timeoutMs), warn(message) }
 const log = (...args) => console.debug("[llm-redactor files]", ...args);
 
-export function startFileInterceptor({ processFile, isEnabled, notify }) {
+function toDataTransfer(files) {
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(f);
+  return dt;
+}
+
+// Browser defaults; tests inject fakes.
+const DEFAULTS = {
+  isFileInput: (t) => t instanceof HTMLInputElement && t.type === "file",
+  setFiles: (input, files) => (input.files = toDataTransfer(files).files),
+  makeEvent: (kind, type, init, files) => {
+    if (kind === "drop") return new DragEvent(type, { ...init, dataTransfer: toDataTransfer(files) });
+    if (kind === "paste") return new ClipboardEvent(type, { ...init, clipboardData: toDataTransfer(files) });
+    return new Event(type, init);
+  },
+};
+
+// processFile: (File) => Promise<{ status, file, count, warnings? }>
+// notify: { working(message) => update(kind, message, timeoutMs), warn(message) }
+export function startFileInterceptor({
+  processFile,
+  isEnabled,
+  notify,
+  win = window,
+  doc = document,
+  isFileInput = DEFAULTS.isFileInput,
+  setFiles = DEFAULTS.setFiles,
+  makeEvent = DEFAULTS.makeEvent,
+}) {
   const ours = new WeakSet();
+  const heldInputs = new WeakSet();
 
   async function redactAll(files) {
     return Promise.all(
@@ -20,6 +47,7 @@ export function startFileInterceptor({ processFile, isEnabled, notify }) {
         const update = notify.working(`Redacting ${file.name}…`);
         try {
           const out = await processFile(file);
+          for (const w of out.warnings ?? []) notify.warn(`${file.name}: ${w}`);
           if (out.status === "no-text") {
             update("warn", `${file.name} has no text layer — attached unredacted`, 0);
           } else if (out.status === "unsupported") {
@@ -36,14 +64,7 @@ export function startFileInterceptor({ processFile, isEnabled, notify }) {
     );
   }
 
-  function toDataTransfer(files) {
-    const dt = new DataTransfer();
-    for (const f of files) dt.items.add(f);
-    return dt;
-  }
-
-  // Should this event be held? Only when enabled, not our own, and carrying
-  // at least one file we can redact.
+  // Hold only when enabled, not our own event, and at least one file is redactable.
   function shouldHold(event, files) {
     if (ours.has(event) || !isEnabled() || files.length === 0) return false;
     if (!files.some((f) => classifyFile(f))) {
@@ -58,20 +79,35 @@ export function startFileInterceptor({ processFile, isEnabled, notify }) {
     target.dispatchEvent(event);
   }
 
-  function onChange(event) {
+  // Chrome fires `input` then `change` on file inputs; hold whichever comes
+  // first, swallow the other, and re-dispatch both once redaction is done.
+  function onFileInputEvent(event) {
     const input = event.target;
-    if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
+    if (!isFileInput(input) || ours.has(event)) return;
+    if (heldInputs.has(input)) {
+      event.stopImmediatePropagation();
+      return;
+    }
     const files = [...(input.files ?? [])];
     const hold = shouldHold(event, files);
-    log("change", { ours: ours.has(event), trusted: event.isTrusted, files: files.map((f) => f.name), hold });
+    log(event.type, { trusted: event.isTrusted, files: files.map((f) => f.name), hold });
     if (!hold) return;
     event.stopImmediatePropagation();
+    heldInputs.add(input);
+    setFiles(input, []); // nothing reads the originals while we work
     redactAll(files).then((redacted) => {
-      log("re-dispatching change with", redacted.map((f) => `${f.name} (${f.size} bytes)`));
-      input.files = toDataTransfer(redacted).files;
-      dispatch(input, new Event("input", { bubbles: true }));
-      dispatch(input, new Event("change", { bubbles: true }));
+      log("re-dispatching input/change with", redacted.map((f) => `${f.name} (${f.size} bytes)`));
+      setFiles(input, redacted);
+      heldInputs.delete(input);
+      dispatch(input, makeEvent("input", "input", { bubbles: true }));
+      dispatch(input, makeEvent("change", "change", { bubbles: true }));
     });
+  }
+
+  // A drop overlay or paste box may be unmounted while we work; events on a
+  // detached node never reach the page, so fall back to a live target.
+  function liveTarget(target, fallback) {
+    return target?.isConnected ? target : (fallback() ?? doc.body);
   }
 
   function onDrop(event) {
@@ -82,7 +118,8 @@ export function startFileInterceptor({ processFile, isEnabled, notify }) {
     const { target, clientX, clientY, screenX, screenY } = event;
     redactAll(files).then((redacted) => {
       const init = { bubbles: true, cancelable: true, composed: true, clientX, clientY, screenX, screenY };
-      dispatch(target, new DragEvent("drop", { ...init, dataTransfer: toDataTransfer(redacted) }));
+      const to = liveTarget(target, () => doc.elementFromPoint(clientX, clientY));
+      dispatch(to, makeEvent("drop", "drop", init, redacted));
     });
   }
 
@@ -94,19 +131,22 @@ export function startFileInterceptor({ processFile, isEnabled, notify }) {
     const target = event.target;
     redactAll(files).then((redacted) => {
       const init = { bubbles: true, cancelable: true, composed: true };
-      dispatch(target, new ClipboardEvent("paste", { ...init, clipboardData: toDataTransfer(redacted) }));
+      const to = liveTarget(target, () => doc.activeElement);
+      dispatch(to, makeEvent("paste", "paste", init, redacted));
     });
   }
 
-  window.addEventListener("change", onChange, true);
-  window.addEventListener("drop", onDrop, true);
-  window.addEventListener("paste", onPaste, true);
+  win.addEventListener("input", onFileInputEvent, true);
+  win.addEventListener("change", onFileInputEvent, true);
+  win.addEventListener("drop", onDrop, true);
+  win.addEventListener("paste", onPaste, true);
 
   return {
     stop() {
-      window.removeEventListener("change", onChange, true);
-      window.removeEventListener("drop", onDrop, true);
-      window.removeEventListener("paste", onPaste, true);
+      win.removeEventListener("input", onFileInputEvent, true);
+      win.removeEventListener("change", onFileInputEvent, true);
+      win.removeEventListener("drop", onDrop, true);
+      win.removeEventListener("paste", onPaste, true);
     },
   };
 }

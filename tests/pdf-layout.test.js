@@ -76,3 +76,10 @@ test("pieceBox pads horizontally by padEm × height", () => {
   const box = pieceBox(it, 1, 3, [1, 0, 0, 1, 0, 0], { padEm: 0.2 });
   assert.deepEqual({ x: box.x, w: box.w }, { x: 108, w: 24 });
 });
+
+test("pieceBox follows rotated text (90°)", () => {
+  // Text running up the page: direction (0,1), ascent toward -x.
+  const it = { str: "abcd", transform: [0, 12, -12, 0, 300, 50], width: 40, height: 12 };
+  const box = pieceBox(it, 0, 4, [1, 0, 0, 1, 0, 0]);
+  assert.deepEqual(box, { x: 288, y: 50, w: 12, h: 40 });
+});

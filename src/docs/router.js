@@ -1,7 +1,7 @@
 // Routes an attached file to the right format handler.
 //
 // RedactSpans = (texts: string[]) => Promise<Array<Array<{start,end,standIn}>>>
-// Handler     = (bytes, redactSpans) => Promise<{ bytes, count, status? }>
+// Handler     = (bytes, redactSpans) => Promise<{ bytes, count, status?, warnings? }>
 
 const MAX_BYTES = 50 * 1024 * 1024;
 
@@ -46,5 +46,5 @@ export async function redactFile({ name, type, bytes }, redactSpans, handlers) {
   const kind = classifyFile({ name, type });
   if (!kind) return { status: "unsupported", bytes, count: 0 };
   const out = await handlers[kind](bytes, redactSpans);
-  return { status: out.status ?? "redacted", bytes: out.bytes, count: out.count };
+  return { status: out.status ?? "redacted", bytes: out.bytes, count: out.count, warnings: out.warnings ?? [] };
 }

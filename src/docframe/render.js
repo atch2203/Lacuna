@@ -32,7 +32,10 @@ export function measureText(str) {
   return measureCtx.measureText(str).width;
 }
 
-export async function renderPage(page, viewport, paints) {
+// annotationMode: pass pdfjs.AnnotationMode.DISABLE — form field and
+// annotation appearances aren't in the text layer, so they'd be drawn
+// unredacted into the page image.
+export async function renderPage(page, viewport, paints, annotationMode) {
   const width = Math.ceil(viewport.width);
   const height = Math.ceil(viewport.height);
   const canvas = new OffscreenCanvas(width, height);
@@ -42,7 +45,7 @@ export async function renderPage(page, viewport, paints) {
   // intent "print": the display intent paces rendering with
   // requestAnimationFrame, which never fires in a display:none iframe (or a
   // background tab), so the render promise would never resolve.
-  await page.render({ canvas, canvasContext: ctx, viewport, intent: "print" }).promise;
+  await page.render({ canvas, canvasContext: ctx, viewport, intent: "print", annotationMode }).promise;
 
   for (const p of paints) {
     const [r, g, b] = borderColor(ctx, p, width, height);

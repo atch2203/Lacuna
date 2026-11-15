@@ -67,3 +67,10 @@ test("mixed drop: pdf + png keep order and statuses", async () => {
   const out = await Promise.all(files.map((f) => redactFile(f, unreachable, handlers)));
   assert.deepEqual(out.map((o) => o.status), ["redacted", "unsupported"]);
 });
+
+test("redactFile passes handler warnings through", async () => {
+  const out = await redactFile({ name: "a.docx", type: "", bytes: enc("x") }, unreachable, {
+    docx: async () => ({ bytes: enc("y"), count: 0, warnings: ["contains 1 embedded object that was not redacted"] }),
+  });
+  assert.deepEqual(out.warnings, ["contains 1 embedded object that was not redacted"]);
+});

@@ -9,6 +9,7 @@ const log = (...args) => console.debug("[llm-redactor docframe]", ...args);
 let framePromise = null;
 let currentFrame = null;
 const pending = new Map();
+const progressHandlers = new Map();
 
 // Pages may remove nodes they don't own (e.g. on re-render), so re-create the
 // frame whenever the cached one is no longer connected.
@@ -59,6 +60,8 @@ function createFrame() {
         ready = true;
         clearTimeout(timer);
         resolve(iframe);
+      } else if (msg.type === "progress") {
+        progressHandlers.get(msg.id)?.();
       } else if (msg.type === "result") {
         pending.get(msg.id)?.(msg);
         pending.delete(msg.id);
@@ -80,12 +83,22 @@ export async function redactInFrame(file) {
   const buffer = await file.arrayBuffer();
 
   const msg = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      reject(new Error("timed out"));
-    }, TIMEOUT_MS);
+    // The timeout restarts on every progress message, so large PDFs that are
+    // still being processed don't fail open.
+    let timer;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        pending.delete(id);
+        progressHandlers.delete(id);
+        reject(new Error("timed out"));
+      }, TIMEOUT_MS);
+    };
+    arm();
+    progressHandlers.set(id, arm);
     pending.set(id, (m) => {
       clearTimeout(timer);
+      progressHandlers.delete(id);
       resolve(m);
     });
     iframe.contentWindow.postMessage(
@@ -96,7 +109,8 @@ export async function redactInFrame(file) {
   });
 
   if (msg.error) throw new Error(msg.error);
-  if (msg.status !== "redacted") return { status: msg.status, file, count: 0 };
+  const warnings = msg.warnings ?? [];
+  if (msg.status !== "redacted") return { status: msg.status, file, count: 0, warnings };
   const out = new File([msg.buffer], file.name, { type: file.type, lastModified: file.lastModified });
-  return { status: "redacted", file: out, count: msg.count };
+  return { status: "redacted", file: out, count: msg.count, warnings };
 }

@@ -40,7 +40,8 @@ async function redactSpans(texts) {
   return res.spans;
 }
 
-const handlers = {
+// onProgress is per request so the page side can extend that request's timeout.
+const handlersFor = (onProgress) => ({
   text: redactText,
   docx: redactDocx,
   pdf: (bytes, spans) =>
@@ -48,14 +49,15 @@ const handlers = {
       pdfjs,
       docOptions,
       measure: measureText,
+      onProgress,
       render: async (page, viewport, paints) => {
         trace(`render page ${page.pageNumber} (${paints.length} paints)`);
-        const jpeg = await renderPage(page, viewport, paints);
+        const jpeg = await renderPage(page, viewport, paints, pdfjs.AnnotationMode.DISABLE);
         trace(`rendered page ${page.pageNumber}`);
         return jpeg;
       },
     }),
-};
+});
 
 window.addEventListener("message", async (event) => {
   const msg = event.data;
@@ -64,11 +66,12 @@ window.addEventListener("message", async (event) => {
   if (!msg || msg.source !== SOURCE || msg.type !== "redact") return;
   const reply = (data, transfer = []) =>
     window.parent.postMessage({ source: SOURCE, type: "result", id: msg.id, ...data }, event.origin, transfer);
+  const onProgress = (p) => window.parent.postMessage({ source: SOURCE, type: "progress", id: msg.id, ...p }, event.origin);
   try {
     trace(`redacting ${msg.name} (${msg.buffer?.byteLength} bytes)`);
-    const out = await redactFile({ name: msg.name, type: msg.mime, bytes: new Uint8Array(msg.buffer) }, redactSpans, handlers);
+    const out = await redactFile({ name: msg.name, type: msg.mime, bytes: new Uint8Array(msg.buffer) }, redactSpans, handlersFor(onProgress));
     const buffer = out.bytes.buffer.slice(out.bytes.byteOffset, out.bytes.byteOffset + out.bytes.byteLength);
-    reply({ status: out.status, count: out.count, buffer }, [buffer]);
+    reply({ status: out.status, count: out.count, warnings: out.warnings, buffer }, [buffer]);
   } catch (err) {
     trace(`failed: ${err?.message ?? err}`);
     reply({ error: String(err?.message ?? err) });

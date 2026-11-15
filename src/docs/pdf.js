@@ -6,7 +6,7 @@
 //            => Promise<Uint8Array /* JPEG */>
 // standIn is "" for continuation pieces of a span that crosses text items
 // (fill only, no text).
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, degrees } from "pdf-lib";
 import { buildPageText, spanPieces, pieceBox, itemTexts } from "./pdf-layout.js";
 
 const MAX_PAGES = 100;
@@ -40,7 +40,10 @@ function paintsFor(items, ranges, spans, viewportTransform, measure) {
 }
 
 // measure(str) (optional): text width for proportional box offsets.
-export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, docOptions = {} }) {
+// onProgress({ page, pages }) (optional): called after each page is built.
+// Renderers must not draw annotations/form fields: their appearances aren't
+// in the text layer, so they can't be redacted (a warning is returned).
+export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, onProgress, docOptions = {} }) {
   // pdf.js may transfer (detach) the buffer it's given; hand it a copy.
   const task = pdfjs.getDocument({ ...docOptions, data: bytes.slice(), verbosity: 0 });
   const src = await task.promise;
@@ -48,13 +51,16 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, do
     if (src.numPages > MAX_PAGES) throw new Error(`pdf has more than ${MAX_PAGES} pages`);
 
     const pages = [];
+    let annotations = 0;
     for (let n = 1; n <= src.numPages; n++) {
       const page = await src.getPage(n);
       const { items } = await page.getTextContent();
       const textItems = items.filter((it) => typeof it.str === "string");
+      annotations += (await page.getAnnotations()).filter((a) => a.subtype !== "Link").length;
       pages.push({ page, items: textItems, ...buildPageText(textItems) });
     }
-    if (pages.every((p) => p.text.trim() === "")) return { status: "no-text", bytes, count: 0 };
+    // Still rebuild when there are annotations, so form fields get removed.
+    if (!annotations && pages.every((p) => p.text.trim() === "")) return { status: "no-text", bytes, count: 0 };
 
     const allSpans = await redactSpans(pages.map((p) => p.text));
 
@@ -70,27 +76,36 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, do
       const width = x1 - x0;
       const height = y1 - y0;
       const scale = Math.min(MAX_SCALE, MAX_SIDE_PX / Math.max(width, height));
-      const viewport = page.getViewport({ scale });
+      // Render unrotated; the output page carries the original /Rotate, so
+      // page size, boxes and hidden text all stay in unrotated coordinates.
+      const viewport = page.getViewport({ scale, rotation: 0 });
 
       const jpeg = await render(page, viewport, paintsFor(items, ranges, spans, viewport.transform, measure));
       const image = await out.embedJpg(jpeg);
       const outPage = out.addPage([width, height]);
       outPage.drawImage(image, { x: 0, y: 0, width, height });
+      if (page.rotate) outPage.setRotation(degrees(page.rotate));
 
       itemTexts(text, ranges, spans).forEach((str, j) => {
         if (!str.trim()) return;
-        const [, , c, d, tx, ty] = items[j].transform;
+        const [a, b, c, d, tx, ty] = items[j].transform;
         outPage.drawText(hiddenText(str, font), {
           x: tx - x0,
           y: ty - y0,
           size: Math.hypot(c, d) || items[j].height || 10,
+          rotate: degrees((Math.atan2(b, a) * 180) / Math.PI),
           font,
           opacity: 0,
         });
       });
+      page.cleanup();
+      onProgress?.({ page: i + 1, pages: pages.length });
     }
 
-    return { bytes: await out.save(), count };
+    const warnings = annotations
+      ? [`${annotations} form field${annotations === 1 ? "" : "s"}/annotation${annotations === 1 ? "" : "s"} removed (not redactable)`]
+      : [];
+    return { bytes: await out.save(), count, warnings };
   } finally {
     await task.destroy();
   }

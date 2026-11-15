@@ -61,14 +61,28 @@ export function pieceBox(item, from, to, viewportTransform, { measure, padEm = 0
     f0 = measure(str.slice(0, from)) / total;
     f1 = measure(str.slice(0, to)) / total;
   }
-  const [, , , , tx, ty] = item.transform;
+  // Text direction u = (a, b) and ascent direction v = (c, d), normalized,
+  // so rotated and vertical text get the right quad.
+  const [a, b, c, d, tx, ty] = item.transform;
+  const su = Math.hypot(a, b) || 1;
+  const sv = Math.hypot(c, d) || 1;
+  const [ux, uy] = [a / su, b / su];
+  const [vx, vy] = [c / sv, d / sv];
   const h = itemHeight(item);
   const pad = padEm * h;
-  const x0 = tx + item.width * f0 - pad;
-  const x1 = tx + item.width * f1 + pad;
-  const [ax, ay] = apply(viewportTransform, x0, ty);
-  const [bx, by] = apply(viewportTransform, x1, ty + h);
-  return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) };
+  const s0 = item.width * f0 - pad;
+  const s1 = item.width * f1 + pad;
+  const corners = [
+    [tx + ux * s0, ty + uy * s0],
+    [tx + ux * s1, ty + uy * s1],
+    [tx + ux * s0 + vx * h, ty + uy * s0 + vy * h],
+    [tx + ux * s1 + vx * h, ty + uy * s1 + vy * h],
+  ].map(([x, y]) => apply(viewportTransform, x, y));
+  const xs = corners.map((p) => p[0]);
+  const ys = corners.map((p) => p[1]);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
 }
 
 // Redacted text per item, for the hidden text layer: each stand-in goes in
