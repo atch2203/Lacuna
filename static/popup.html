@@ -1,8 +1,49 @@
 <!doctype html>
 <html>
-  <head><meta charset="utf-8" /><title>LLM Redactor</title></head>
+  <head>
+    <meta charset="utf-8" />
+    <title>LLM Redactor</title>
+    <style>
+      :root { color-scheme: light dark; --muted: #6b7280; --line: #d1d5db; --accent: #2563eb; --danger: #b42318; }
+      body { width: 360px; margin: 0; padding: 12px 14px; font: 13px/1.4 system-ui, sans-serif; }
+      h1 { font-size: 15px; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+      h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 6px; }
+      label.toggle { font-weight: normal; font-size: 13px; display: flex; gap: 6px; align-items: center; }
+      form { display: flex; gap: 6px; }
+      input[type=text] { flex: 1; min-width: 0; padding: 4px 6px; }
+      ul { list-style: none; padding: 0; margin: 6px 0 0; }
+      li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+      .cat { color: var(--muted); font-size: 11px; }
+      .empty { color: var(--muted); font-style: italic; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      td { padding: 3px 4px; border-bottom: 1px solid var(--line); word-break: break-all; vertical-align: top; }
+      .row { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+      button.link { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
+      button.danger { color: var(--danger); }
+    </style>
+  </head>
   <body>
-    <p>LLM Redactor</p>
+    <h1>LLM Redactor <label class="toggle"><input type="checkbox" id="enabled" /> Enabled</label></h1>
+
+    <h2>Dictionary</h2>
+    <form id="dict-form">
+      <input type="text" id="term" placeholder="Term to redact" required />
+      <select id="category">
+        <option value="PERSON">Person</option>
+        <option value="ORG">Org</option>
+        <option value="OTHER">Other</option>
+      </select>
+      <button type="submit">Add</button>
+    </form>
+    <ul id="dict-list"></ul>
+
+    <h2>Vault</h2>
+    <table><tbody id="vault-body"></tbody></table>
+    <div class="row">
+      <button class="link" id="toggle-originals">Show originals</button>
+      <button class="link danger" id="clear-vault">Clear vault</button>
+    </div>
+
     <script src="popup.js"></script>
   </body>
 </html>
