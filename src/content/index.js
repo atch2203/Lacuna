@@ -4,12 +4,16 @@ import { makeRestorer } from "../engine/restore.js";
 import { serveRedaction, onFailure } from "../shared/bridge.js";
 import { loadState, onStateChange } from "./store.js";
 import { startDomRestorer } from "./dom-restorer.js";
-import { showWarningBadge } from "./badge.js";
+import { showWarningBadge, showInfoBadge } from "./badge.js";
+import { startFileInterceptor } from "./file-interceptor.js";
+import { redactInFrame } from "./docframe-client.js";
 
 let restore = makeRestorer([]);
 let restorer = null;
+let enabled = true;
 
 function applyState(state) {
+  enabled = state.settings.enabled;
   restore = makeRestorer(state.vault.entries());
   restorer?.refresh();
 }
@@ -28,3 +32,12 @@ onFailure(window, (reason) => {
 });
 
 restorer = startDomRestorer({ getRestore: () => restore });
+
+startFileInterceptor({
+  processFile: redactInFrame,
+  isEnabled: () => enabled,
+  notify: {
+    working: (message) => showInfoBadge(message, { timeoutMs: 0 }),
+    warn: (message) => showWarningBadge(message),
+  },
+});
