@@ -41,10 +41,20 @@ export function applySpans(text, spans) {
   return parts.join("");
 }
 
+export function swapsFor(text, spans) {
+  return spans.map(({ start, end, standIn }) => ({ original: text.slice(start, end), standIn }));
+}
+
 export async function redactFile({ name, type, bytes }, redactSpans, handlers) {
   if (bytes.length > MAX_BYTES) throw new Error("file exceeds 50 MB");
   const kind = classifyFile({ name, type });
   if (!kind) return { status: "unsupported", bytes, count: 0 };
   const out = await handlers[kind](bytes, redactSpans);
-  return { status: out.status ?? "redacted", bytes: out.bytes, count: out.count, warnings: out.warnings ?? [] };
+  return {
+    status: out.status ?? "redacted",
+    bytes: out.bytes,
+    count: out.count,
+    swaps: out.swaps ?? [],
+    warnings: out.warnings ?? [],
+  };
 }

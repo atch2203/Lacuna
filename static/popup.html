@@ -17,6 +17,7 @@
       .empty { color: var(--muted); font-style: italic; }
       table { width: 100%; border-collapse: collapse; font-size: 12px; }
       td { padding: 3px 4px; border-bottom: 1px solid var(--line); word-break: break-all; vertical-align: top; }
+      th { padding: 3px 4px; text-align: left; color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--line); }
       .row { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
       button.link { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
       button.danger { color: var(--danger); }
@@ -51,6 +52,12 @@
       <button class="link" id="toggle-originals">Show originals</button>
       <button class="link danger" id="clear-vault">Clear vault</button>
     </div>
+
+    <h2>Recent substitutions</h2>
+    <table>
+      <thead><tr><th>Site</th><th>Original → stand-in</th></tr></thead>
+      <tbody id="demo-swaps-body"></tbody>
+    </table>
 
     <script src="popup.js"></script>
   </body>

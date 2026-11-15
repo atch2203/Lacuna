@@ -39,6 +39,10 @@ function show(kind, message, timeoutMs) {
   ensureStack().appendChild(pill);
   let timer = null;
   const update = (nextKind, nextMessage, nextTimeout) => {
+    if (nextKind === "silent") {
+      pill.remove();
+      return;
+    }
     pill.className = `pill ${nextKind}`;
     pill.textContent = nextKind === "warn" ? `⚠ ${nextMessage}` : nextMessage;
     clearTimeout(timer);

@@ -12,7 +12,11 @@ export function sentNotice(host, swaps, { guardActive }) {
 
 export const restoredNotice = (n) => `↓ Restored ${plural(n, "value")} in reply`;
 export const copiedNotice = (n) => `📋 Copied with ${plural(n, "real value")}`;
-export const fileNotice = (name, n) => `📄 ${name} — ${plural(n, "swap")}`;
+export function fileNotice(name, swaps, { guardActive = false } = {}) {
+  const entries = Array.isArray(swaps) ? swaps : [];
+  const lines = entries.map(({ original, standIn }) => (guardActive ? `→ ${standIn}` : `${original} → ${standIn}`));
+  return [`📄 ${name} — ${plural(entries.length, "swap")}`, ...lines].join("\n");
+}
 
 const REASONS = { share: "sharing", manual: "manual" };
 export function guardNotice({ active, reason, hidden = 0 }) {

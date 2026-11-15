@@ -2,7 +2,7 @@
 // encoding. UTF-16 (LE/BE, with BOM) and UTF-8 (BOM kept) are supported;
 // anything that isn't valid UTF-8 is rejected so the caller fails open with
 // a visible warning instead of silently corrupting or under-redacting it.
-import { applySpans } from "./router.js";
+import { applySpans, swapsFor } from "./router.js";
 
 function detect(bytes) {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return { encoding: "utf-16le", bom: 2 };
@@ -36,5 +36,5 @@ export async function redactText(bytes, redactSpans) {
   const out = new Uint8Array(bom + body.length);
   out.set(bytes.subarray(0, bom));
   out.set(body, bom);
-  return { bytes: out, count: spans.length };
+  return { bytes: out, count: spans.length, swaps: swapsFor(text, spans) };
 }

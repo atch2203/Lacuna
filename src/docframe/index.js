@@ -5,7 +5,7 @@
 // Protocol (postMessage, source "llm-redactor-docframe"):
 //   frame → parent  { type: "ready" }
 //   parent → frame  { type: "redact", id, name, mime, buffer }   (buffer transferred)
-//   frame → parent  { type: "result", id, status, count, buffer } | { type: "result", id, error }
+//   frame → parent  { type: "result", id, status, count, swaps, buffer } | { type: "result", id, error }
 import * as pdfjs from "pdfjs-dist";
 import { redactFile } from "../docs/router.js";
 import { redactText } from "../docs/text.js";
@@ -88,7 +88,7 @@ window.addEventListener("message", async (event) => {
       return;
     }
     const buffer = out.bytes.buffer.slice(out.bytes.byteOffset, out.bytes.byteOffset + out.bytes.byteLength);
-    reply({ status: out.status, count: out.count, warnings: out.warnings, buffer }, [buffer]);
+    reply({ status: out.status, count: out.count, swaps: out.swaps, warnings: out.warnings, buffer }, [buffer]);
   } catch (err) {
     trace(`failed: ${err?.message ?? err}`);
     reply({ error: String(err?.message ?? err) });

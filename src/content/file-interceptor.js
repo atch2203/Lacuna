@@ -29,6 +29,7 @@ export function startFileInterceptor({
   processFile,
   isEnabled,
   notify,
+  isGuardActive = () => false,
   win = window,
   doc = document,
   isFileInput = DEFAULTS.isFileInput,
@@ -54,7 +55,7 @@ export function startFileInterceptor({
           } else if (out.status === "unsupported") {
             update("warn", `${file.name} attached unredacted (unsupported type)`, 0);
           } else {
-            update("info", fileNotice(file.name, out.count), 6000);
+            update("info", fileNotice(file.name, out.swaps ?? [], { guardActive: isGuardActive() }), 6000);
           }
           return out.file;
         } catch (err) {

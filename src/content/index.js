@@ -1,10 +1,10 @@
 // ISOLATED-world entry: relays redaction requests from the MAIN-world hooks
 // to the service worker (sole vault writer) and restores stand-ins on the page.
 import { makeRestorer } from "../engine/restore.js";
-import { serveRedaction, onFailure } from "../shared/bridge.js";
+import { serveRedaction } from "../shared/bridge.js";
 import { loadState, onStateChange } from "./store.js";
 import { startDomRestorer } from "./dom-restorer.js";
-import { showWarningBadge, showInfoBadge, clearNotices } from "./badge.js";
+import { showInfoBadge, clearNotices } from "./badge.js";
 import { startFileInterceptor } from "./file-interceptor.js";
 import { redactInFrame, restoreInFrame } from "./docframe-client.js";
 import { sentNotice, restoredNotice, fileNotice } from "../demo/notices.js";
@@ -41,10 +41,6 @@ serveRedaction(window, async (texts) => {
     }
   }
   return res.texts;
-});
-
-onFailure(window, (reason) => {
-  showWarningBadge(`Redaction failed — message sent unredacted: ${reason}`);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -84,14 +80,21 @@ const restoreAndCount = (text) => {
   return out;
 };
 
-restorer = startDomRestorer({ getRestore: () => (guardActive || !guardKnown ? identity : restoreAndCount) });
+restorer = startDomRestorer({
+  getRestore: () => (!enabled ? restore : guardActive || !guardKnown ? identity : restoreAndCount),
+});
 
 startFileInterceptor({
   processFile: redactInFrame,
   isEnabled: () => enabled,
+  isGuardActive: () => guardActive || !guardKnown,
   notify: {
-    working: (message) => showInfoBadge(message, { timeoutMs: 0 }),
-    warn: (message) => showWarningBadge(message),
+    working: (message) => {
+      const update = showInfoBadge(message, { timeoutMs: 0 });
+      return (kind, nextMessage, timeoutMs) =>
+        update(kind === "warn" ? "silent" : kind, nextMessage, timeoutMs);
+    },
+    warn: () => {},
   },
 });
 
@@ -102,6 +105,10 @@ window.addEventListener("message", async (event) => {
   if (event.source !== window || msg?.source !== FILE) return;
   if (msg.type === "picker-redact") {
     try {
+      if (!enabled) {
+        window.postMessage({ source: FILE, type: "picker-result", id: msg.id, status: "clean" }, "*");
+        return;
+      }
       const file = new File([msg.buffer], msg.name, { type: msg.mime, lastModified: msg.lastModified });
       const out = await redactInFrame(file);
       if (out.status !== "redacted") {
@@ -117,7 +124,7 @@ window.addEventListener("message", async (event) => {
   }
   if (msg.type !== "restore") return;
   let bytes = null;
-  if (enabled && !guardActive) {
+  if (!guardActive) {
     try {
       bytes = await restoreInFrame({ name: msg.name, mime: msg.mime, buffer: msg.buffer });
     } catch {

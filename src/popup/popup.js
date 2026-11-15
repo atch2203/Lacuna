@@ -7,7 +7,8 @@ let showOriginals = false;
 
 async function load() {
   const { vault, dictionary = [], settings = {} } = await chrome.storage.local.get(["vault", "dictionary", "settings"]);
-  return { vault, dictionary, settings: { enabled: true, ...settings } };
+  const { demoSwaps = [] } = await chrome.storage.session.get("demoSwaps");
+  return { vault, dictionary, demoSwaps, settings: { enabled: true, ...settings } };
 }
 
 function mask(s) {
@@ -34,7 +35,7 @@ $("guard-manual").addEventListener("change", (e) => {
 
 async function render() {
   renderGuard();
-  const { vault, dictionary, settings } = await load();
+  const { vault, dictionary, demoSwaps, settings } = await load();
   $("enabled").checked = settings.enabled;
   $("demo").checked = settings.demoNotifications === true;
 
@@ -62,6 +63,17 @@ async function render() {
       : [el("tr", {}, [el("td", { className: "empty", textContent: "Nothing redacted yet." })])]),
   );
   $("toggle-originals").textContent = showOriginals ? "Hide originals" : "Show originals";
+
+  $("demo-swaps-body").replaceChildren(
+    ...(demoSwaps.length
+      ? demoSwaps.map(({ original, standIn, host }) =>
+          el("tr", {}, [
+            el("td", { textContent: host || "unknown site" }),
+            el("td", { textContent: `${original} → ${standIn}` }),
+          ]),
+        )
+      : [el("tr", {}, [el("td", { className: "empty", colSpan: 2, textContent: "No recent substitutions." })])]),
+  );
 }
 
 async function removeTerm(index) {
@@ -106,7 +118,10 @@ $("clear-vault").addEventListener("click", async () => {
 
 chrome.storage.onChanged.addListener((_, area) => {
   if (area === "local") render();
-  if (area === "session") renderGuard();
+  if (area === "session") {
+    renderGuard();
+    render();
+  }
 });
 
 render();

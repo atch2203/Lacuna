@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sentNotice, restoredNotice, guardNotice, copiedNotice, createAggregator } from "../src/demo/notices.js";
+import { sentNotice, fileNotice, restoredNotice, guardNotice, copiedNotice, createAggregator } from "../src/demo/notices.js";
 
 const swaps = [
   { original: "jane@corp.io", standIn: "jordan.lee@example.com" },
@@ -12,10 +12,18 @@ test("sent notice lists swaps", () => {
   assert.equal(n, "↑ Sent to claude.ai — 2 swaps\njane@corp.io → jordan.lee@example.com\nAKIAIOSFODNN7EXAMPLE → [API_KEY_1]");
 });
 
+test("file notice lists every swap", () => {
+  assert.equal(
+    fileNotice("brief.pdf", swaps),
+    "📄 brief.pdf — 2 swaps\njane@corp.io → jordan.lee@example.com\nAKIAIOSFODNN7EXAMPLE → [API_KEY_1]",
+  );
+});
+
 test("while guarding, notices never show originals", () => {
   const n = sentNotice("claude.ai", swaps, { guardActive: true });
   assert.ok(!n.includes("jane") && !n.includes("AKIA"), n);
   assert.match(n, /→ jordan\.lee@example\.com/);
+  assert.equal(fileNotice("brief.pdf", swaps, { guardActive: true }), "📄 brief.pdf — 2 swaps\n→ jordan.lee@example.com\n→ [API_KEY_1]");
 });
 
 test("long originals are truncated", () => {

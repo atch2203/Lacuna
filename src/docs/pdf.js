@@ -8,6 +8,7 @@
 // (fill only, no text).
 import { PDFDocument, StandardFonts, degrees } from "pdf-lib";
 import { buildPageText, spanPieces, pieceBox, itemTexts } from "./pdf-layout.js";
+import { swapsFor } from "./router.js";
 
 const MAX_PAGES = 100;
 const MAX_SCALE = 2;
@@ -75,10 +76,12 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, on
     const out = await PDFDocument.create();
     const font = await out.embedFont(StandardFonts.Helvetica);
     let count = 0;
+    const swaps = [];
 
     for (const [i, { page, items, text, ranges }] of pages.entries()) {
       const spans = allSpans[i];
       count += spans.length;
+      swaps.push(...swapsFor(text, spans));
 
       const [x0, y0, x1, y1] = page.view;
       const width = x1 - x0;
@@ -117,7 +120,7 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, on
     if (unmapped) {
       warnings.push(`${unmapped} character${unmapped === 1 ? "" : "s"} couldn't be read reliably — check the preview for unredacted values`);
     }
-    return { bytes: await out.save(), count, warnings };
+    return { bytes: await out.save(), count, swaps, warnings };
   } finally {
     await task.destroy();
   }

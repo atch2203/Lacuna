@@ -38,6 +38,22 @@ function redactWithSwaps(text, detectors, vault) {
 const redactTexts = (texts) => withVault(texts, redactWithSwaps, (t) => t.map((text) => ({ text, swaps: [] })));
 const redactSpans = (texts) => withVault(texts, findRedactions, (t) => t.map(() => []));
 
+async function recordDemoSwaps(swaps, sender) {
+  if (!swaps.length) return;
+  const { settings = {} } = await chrome.storage.local.get("settings");
+  if (settings.demoNotifications !== true) return;
+  const host = (() => {
+    try {
+      return new URL(sender?.tab?.url ?? "").host || "unknown site";
+    } catch {
+      return "unknown site";
+    }
+  })();
+  const { demoSwaps = [] } = await chrome.storage.session.get("demoSwaps");
+  const entries = swaps.map(({ original, standIn }) => ({ original, standIn, host, time: Date.now() }));
+  await chrome.storage.session.set({ demoSwaps: [...entries, ...demoSwaps].slice(0, 100) });
+}
+
 // --- Screen-share guard registry -------------------------------------------
 // Content scripts read `guard` from storage.session; allow them to.
 chrome.storage.session.setAccessLevel?.({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
@@ -101,8 +117,12 @@ const HANDLERS = {
     return { spans: restoreSpansFor(msg.texts ?? [], entries) };
   },
   "set-manual-guard": (msg) => updateGuard({ type: "manual", on: msg.on }).then((guard) => ({ guard })),
-  redact: (msg) =>
-    redactTexts(msg.texts).then((out) => ({ texts: out.map((o) => o.text), swaps: out.flatMap((o) => o.swaps) })),
+  redact: (msg, sender) =>
+    redactTexts(msg.texts).then(async (out) => {
+      const swaps = out.flatMap((o) => o.swaps);
+      await recordDemoSwaps(swaps, sender);
+      return { texts: out.map((o) => o.text), swaps };
+    }),
   "redact-spans": (msg) => redactSpans(msg.texts).then((spans) => ({ spans })),
 };
 

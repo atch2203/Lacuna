@@ -10,7 +10,7 @@
 // people.xml, document properties and customXml.
 import JSZip from "jszip";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { applySpans } from "./router.js";
+import { applySpans, swapsFor } from "./router.js";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const XML_NS = "http://www.w3.org/XML/1998/namespace";
@@ -151,10 +151,12 @@ export async function redactDocx(bytes, redactSpans) {
   const allSpans = await redactSpans(units.map(unitText));
 
   let count = 0;
+  const swaps = [];
   units.forEach((unit, i) => {
     const spans = allSpans[i];
     if (!spans.length) return;
     count += spans.length;
+    swaps.push(...swapsFor(unitText(unit), spans));
     unit.part.changed = true;
     if (unit.kind === "attr") {
       unit.el.setAttribute(unit.attr.name, applySpans(unit.attr.value, spans));
@@ -179,5 +181,5 @@ export async function redactDocx(bytes, redactSpans) {
   const embedded = Object.keys(zip.files).filter((n) => !zip.files[n].dir && /^word\/embeddings\//.test(n)).length;
   if (embedded) warnings.push(`contains ${embedded} embedded object${embedded === 1 ? "" : "s"} that ${embedded === 1 ? "was" : "were"} not redacted`);
 
-  return { bytes: await zip.generateAsync({ type: "uint8array" }), count, warnings };
+  return { bytes: await zip.generateAsync({ type: "uint8array" }), count, swaps, warnings };
 }
