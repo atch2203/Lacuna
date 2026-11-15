@@ -45,21 +45,33 @@ export function findSensitive(text, detectors) {
   }));
 }
 
-function matchCaseOf(word, original) {
-  if (original === original.toLowerCase()) return word.toLowerCase();
-  if (original === original.toUpperCase()) return word.toUpperCase();
-  return word;
+// Copy the original's capitalisation onto a fake of the same length.
+function withCaseOf(fake, original) {
+  if (fake.length !== original.length) {
+    if (original === original.toLowerCase()) return fake.toLowerCase();
+    if (original === original.toUpperCase()) return fake.toUpperCase();
+    return fake;
+  }
+  let out = "";
+  for (let i = 0; i < fake.length; i++) {
+    const o = original[i];
+    out += o !== o.toLowerCase() ? fake[i].toUpperCase() : o !== o.toUpperCase() ? fake[i].toLowerCase() : fake[i];
+  }
+  return out;
 }
 
-// A name part maps to the same word of the full name's fake, so "Jane" and
-// "Doe" agree with "Jane Doe" whichever appears first.
-function partStandIn(original, detector, vault, avoid) {
-  const full = vault.standInFor(detector.fullTerm, detector.category, detector.style, avoid);
-  const word = full.split(" ")[detector.partIndex];
+// Dictionary matches derive their fake from the canonical term, so every
+// capitalisation ("Jane Doe", "jane doe") and every name part ("Jane",
+// "doe") stays consistent with the full name's fake.
+function dictionaryStandIn(original, detector, vault, avoid) {
+  const canonical = detector.fullTerm ?? detector.canonical;
+  const base = vault.standInFor(canonical, detector.category, detector.style, avoid);
+  if (detector.fullTerm === undefined && original === canonical) return base;
+  const word = detector.fullTerm === undefined ? base : base.split(" ")[detector.partIndex];
   if (!word) return vault.standInFor(original, detector.category, detector.style, avoid);
-  const standIn = matchCaseOf(word, original);
+  const standIn = withCaseOf(word, original);
   vault.link(original, standIn);
-  return standIn;
+  return vault.byOriginal[original] ?? standIn;
 }
 
 // Like findSensitive, plus stand-ins assigned left-to-right (so numbering
@@ -73,8 +85,8 @@ export function findRedactions(text, detectors, vault) {
   return spans.map(({ start, end, detector }) => {
     const original = text.slice(start, end);
     const standIn =
-      detector.fullTerm !== undefined
-        ? partStandIn(original, detector, vault, avoid)
+      detector.fullTerm !== undefined || detector.canonical !== undefined
+        ? dictionaryStandIn(original, detector, vault, avoid)
         : vault.standInFor(original, detector.category, detector.style, avoid);
     return { start, end, standIn };
   });
