@@ -69,8 +69,40 @@ function start() {
   });
 }
 
+// --- Canvas guard bridge (Google Docs/Sheets/Slides) ------------------------
+const CANVAS = "llm-redactor-canvas";
+const isDocs = location.hostname === "docs.google.com";
+const canvasPending = new Set();
+const toCanvas = (msg) => window.postMessage({ source: CANVAS, ...msg }, "*");
+const standInOf = (o) => vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o];
+
+function answerCanvas(originals) {
+  const map = {};
+  for (const o of originals) {
+    const s = standInOf(o);
+    if (s !== undefined) {
+      map[o] = s;
+      canvasPending.delete(o);
+    }
+  }
+  if (Object.keys(map).length) toCanvas({ type: "standins", map });
+}
+
+if (isDocs) {
+  window.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (event.source !== window || msg?.source !== CANVAS || msg.type !== "request" || !(active && enabled)) return;
+    const items = (Array.isArray(msg.items) ? msg.items : []).slice(0, 200).filter((i) => typeof i?.original === "string");
+    for (const i of items) canvasPending.add(i.original);
+    answerCanvas(items.map((i) => i.original));
+    const unknown = items.filter((i) => canvasPending.has(i.original));
+    if (unknown.length) send({ type: "guard-stand-ins", items: unknown });
+  });
+}
+
 function apply({ restart = false } = {}) {
   const shouldRun = active && enabled;
+  if (isDocs) toCanvas({ type: "state", active: shouldRun });
   if (guard && (!shouldRun || restart)) {
     guard.stop();
     guard = null;
@@ -92,6 +124,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (changes.guardVault) {
       guardVault = changes.guardVault.newValue ?? EMPTY;
       guard?.vaultChanged();
+      if (isDocs && canvasPending.size) answerCanvas([...canvasPending]);
     }
     if (changes.guard) {
       active = Boolean(changes.guard.newValue?.active);
@@ -113,6 +146,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.vault) {
     vault = changes.vault.newValue ?? EMPTY;
     guard?.vaultChanged();
+    if (isDocs && canvasPending.size) answerCanvas([...canvasPending]);
   }
 });
 

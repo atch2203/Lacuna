@@ -3,6 +3,8 @@
 // attached after load so the guard can observe them.
 import { installShareDetector } from "./share-detector.js";
 import { wrapClipboard } from "../demo/clipboard.js";
+import { installCanvasGuard } from "./canvas-guard.js";
+import { PATTERN_DETECTORS } from "../engine/patterns.js";
 
 if (navigator.mediaDevices?.getDisplayMedia && typeof MediaStreamTrack !== "undefined") {
   installShareDetector({
@@ -44,5 +46,36 @@ if (navigator.clipboard) {
       window.addEventListener("message", onAck);
       window.postMessage({ source: CLIP, type: "write", id, request }, "*");
     });
+  });
+}
+
+// Google Docs/Sheets/Slides paint text on <canvas>: guard it at draw time.
+// The page side only ever learns stand-ins for values it reports itself.
+const CANVAS = "llm-redactor-canvas";
+if (location.hostname === "docs.google.com" && typeof CanvasRenderingContext2D !== "undefined") {
+  let active = false;
+  const standIns = new Map();
+  const repaint = () => window.dispatchEvent(new Event("resize"));
+  const canvasGuard = installCanvasGuard({
+    proto: CanvasRenderingContext2D.prototype,
+    detectors: PATTERN_DETECTORS,
+    isActive: () => active,
+    lookup: (o) => standIns.get(o),
+    request: (items) => window.postMessage({ source: CANVAS, type: "request", items }, "*"),
+  });
+  window.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (event.source !== window || msg?.source !== CANVAS) return;
+    if (msg.type === "state" && msg.active !== active) {
+      active = Boolean(msg.active);
+      if (!active) {
+        standIns.clear();
+        canvasGuard.forgetRequests();
+      }
+      repaint();
+    } else if (msg.type === "standins") {
+      for (const [o, s] of Object.entries(msg.map ?? {})) standIns.set(o, s);
+      repaint();
+    }
   });
 }
