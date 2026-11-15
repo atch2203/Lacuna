@@ -104,6 +104,61 @@ function secretDetector() {
   };
 }
 
+// --- Social media handles ---------------------------------------------------
+// Profile links: only the username part is sensitive.
+const PROFILE_PREFIXES = [
+  String.raw`(?:x|twitter|instagram|github|facebook)\.com/`,
+  String.raw`linkedin\.com/in/`,
+  String.raw`(?:tiktok|youtube)\.com/@`,
+  String.raw`threads\.net/@`,
+  String.raw`reddit\.com/(?:u|user)/`,
+  String.raw`bsky\.app/profile/`,
+];
+const USERNAME = String.raw`[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?`;
+const NOT_PROFILES = new Set([
+  "home", "explore", "search", "settings", "i", "intent", "share", "login", "signup", "about", "features",
+  "pricing", "topics", "marketplace", "notifications", "messages", "hashtag", "p", "reel", "reels", "stories",
+  "watch", "results", "channel", "help", "privacy", "terms", "tos", "orgs", "sponsors", "pulls", "issues", "new",
+  "compose", "jobs", "groups", "events", "pages", "shorts", "feed", "r", "explore", "trending", "login", "enterprise",
+]);
+// Bare "@handle": only after whitespace / start / ( " ' [, not followed by
+// "/", "(", "=", ":" or more word characters, and not a common code word.
+const CODE_AT_WORDS = new Set([
+  "media", "import", "charset", "keyframes", "supports", "layer", "container", "page", "namespace", "property",
+  "font", "tailwind", "apply", "extend", "mixin", "include", "use", "forward", "if", "else", "each", "function",
+  "return", "param", "returns", "throws", "type", "typedef", "deprecated", "override", "see", "since", "author",
+  "example", "todo", "link", "inheritdoc", "interface", "implementation", "end", "synthesize", "selector",
+  "protocol", "class", "dataclass", "staticmethod", "classmethod", "abstractmethod", "property", "app", "pytest",
+  "mock", "patch", "test", "before", "after", "beforeeach", "aftereach", "component", "injectable", "input",
+  "output", "ngmodule", "directive", "pipe", "types", "babel", "angular", "vue", "react", "svelte", "click",
+  "submit", "change", "keydown", "keyup", "event", "value", "model", "slot", "ts-ignore", "ts-expect-error",
+  "ts-nocheck", "license", "file", "module", "namespace", "const", "enum", "private", "public", "protected",
+  "static", "async", "await", "everyone", "here", "channel", "latest", "next", "beta", "main",
+]);
+
+function handleDetector() {
+  const link = new RegExp(String.raw`(?<![\w.-])(?:https?://)?(?:www\.|m\.|mobile\.)?(?:${PROFILE_PREFIXES.join("|")})(${USERNAME})`, "gdi");
+  const bare = new RegExp(String.raw`(?<![^\s("'\[])@(${String.raw`[A-Za-z0-9_](?:[A-Za-z0-9_.]*[A-Za-z0-9_])?`})(?![\w@/(=:-])`, "gd");
+  return {
+    id: "handle",
+    category: "HANDLE",
+    style: "token",
+    find(text) {
+      const spans = [];
+      for (const m of text.matchAll(link)) {
+        if (NOT_PROFILES.has(m[1].toLowerCase())) continue;
+        const [start, end] = m.indices[1];
+        spans.push({ start, end });
+      }
+      for (const m of text.matchAll(bare)) {
+        if (CODE_AT_WORDS.has(m[1].toLowerCase())) continue;
+        spans.push({ start: m.index, end: m.index + m[0].length });
+      }
+      return spans.sort((a, b) => a.start - b.start);
+    },
+  };
+}
+
 const OCTET = String.raw`(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)`;
 
 const URL_TOKEN_PARAMS = [
@@ -168,6 +223,7 @@ export const PATTERN_DETECTORS = [
     String.raw`-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z]+ )*PRIVATE KEY-----`,
   ),
   secretDetector(),
+  handleDetector(),
   regexDetector(
     "url_token",
     "token",

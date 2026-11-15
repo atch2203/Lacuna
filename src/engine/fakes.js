@@ -261,6 +261,11 @@ function fakeOnce(category, original, rng) {
       return fakeApiKey(original, rng);
     case "PRIVATE_KEY":
       return fakePrivateKey(original, rng);
+    case "HANDLE": {
+      // Keep "@", separators and digit positions; letters → made-up words.
+      const at = original.startsWith("@") ? "@" : "";
+      return at + fakeWords(original.slice(at.length), rng, []).replace(/\d/g, () => pick(DIGITS, rng));
+    }
     case "PERSON":
       return fakeWords(original, rng, [FIRST_NAMES, LAST_NAMES]);
     case "ORG":

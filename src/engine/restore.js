@@ -10,6 +10,10 @@ function escapeRegExp(s) {
 }
 
 const NAME_LIKE = /^\p{L}[\p{L} .'-]*$/u;
+// "@handle" fakes: platforms treat handles case-insensitively, so match them
+// case-insensitively too, and restore the original exactly as stored.
+const HANDLE_LIKE = /^@[A-Za-z0-9_.]+$/;
+const looseMatch = (s) => NAME_LIKE.test(s) || HANDLE_LIKE.test(s);
 
 // Copy `pattern`'s capitalisation onto `text`: per character when lengths
 // match, otherwise all-lower / all-upper / Title Case / unchanged.
@@ -35,13 +39,17 @@ export function makeStandInMatcher(entries) {
   const exact = new Map(entries);
   const byLower = new Map();
   for (const [standIn, original] of entries) {
-    if (NAME_LIKE.test(standIn) && !byLower.has(standIn.toLowerCase())) byLower.set(standIn.toLowerCase(), original);
+    if (looseMatch(standIn) && !byLower.has(standIn.toLowerCase())) byLower.set(standIn.toLowerCase(), original);
   }
   const alternatives = [...exact.keys()]
     .sort((a, b) => b.length - a.length)
-    .map((s) => (NAME_LIKE.test(s) ? `(?<![\\p{L}\\p{N}_])(?i:${escapeRegExp(s)})(?![\\p{L}\\p{N}_])` : escapeRegExp(s)));
+    .map((s) => (looseMatch(s) ? `(?<![\\p{L}\\p{N}_])(?i:${escapeRegExp(s)})(?![\\p{L}\\p{N}_])` : escapeRegExp(s)));
   const regex = new RegExp(alternatives.join("|"), "gu");
-  const resolve = (m) => exact.get(m) ?? copyCase(byLower.get(m.toLowerCase()) ?? m, m);
+  const resolve = (m) => {
+    if (exact.has(m)) return exact.get(m);
+    const original = byLower.get(m.toLowerCase()) ?? m;
+    return HANDLE_LIKE.test(m) ? original : copyCase(original, m);
+  };
   return { regex, resolve };
 }
 
