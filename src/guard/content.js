@@ -3,7 +3,8 @@
 import { PATTERN_DETECTORS } from "../engine/patterns.js";
 import { makeDictionaryDetectors } from "../engine/dictionary.js";
 import { startScreenGuard } from "./screen-guard.js";
-import { guardNotice } from "../demo/notices.js";
+import { guardNotice, copiedNotice } from "../demo/notices.js";
+import { restoreClipboardText, handleCopy, performClipboardWrite } from "../demo/clipboard.js";
 import { showInfoBadge } from "../content/badge.js";
 
 const SOURCE = "llm-redactor-share";
@@ -123,3 +124,36 @@ chrome.storage.onChanged.addListener((changes, area) => {
   demo = local.settings?.demoNotifications === true;
   apply({ restart: Boolean(guard) });
 })();
+
+// --- Ghost clipboard ---------------------------------------------------------
+// Real values go on the clipboard when copied text contains stand-ins, on the
+// AI sites and on any page while the guard is active.
+const CLIP = "llm-redactor-clip";
+const AI_HOSTS = new Set(["claude.ai", "chatgpt.com", "gemini.google.com"]);
+const clipboardApplies = () => enabled && (AI_HOSTS.has(location.hostname) || active);
+const clipEntries = () => [...Object.entries(vault.byStandIn ?? {}), ...Object.entries(guardVault.byStandIn ?? {})];
+const restoreClip = (text) => restoreClipboardText(text, clipEntries());
+
+function noteCopied(count) {
+  if (count && demo && isTop) showInfoBadge(copiedNotice(count), { timeoutMs: 6000 });
+}
+
+window.addEventListener("copy", (event) => {
+  if (!clipboardApplies()) return;
+  noteCopied(handleCopy(event, { getSelectionText: () => String(window.getSelection() ?? ""), restore: restoreClip }));
+});
+
+window.addEventListener("message", async (event) => {
+  const msg = event.data;
+  if (event.source !== window || msg?.source !== CLIP || msg.type !== "write") return;
+  let handled = 0;
+  if (clipboardApplies()) {
+    try {
+      handled = await performClipboardWrite(msg.request, { restore: restoreClip, clipboard: navigator.clipboard });
+    } catch {
+      handled = 0; // fall back to the page's own write
+    }
+  }
+  noteCopied(handled);
+  window.postMessage({ source: CLIP, type: "ack", id: msg.id, handled: handled > 0 }, "*");
+});
