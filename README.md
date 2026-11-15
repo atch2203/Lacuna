@@ -1,13 +1,13 @@
-# Lacuna!
+![Lacuna](images/lacuna.png)
 TL;DR
 Lacuna is a “man-in-the-middle” (benign) firewall for your browser. Completely invisible to your workflow, Lacuna intercepts prompts and documents uploaded to ChatGPT, Claude, Gemini, or even Deepseek -  seamlessly replacing your private data, passwords, and API keys with realistic synthetic placeholders before they ever leave your machine, and translating the AI’s response back to reality in real time. When sharing your screen, Lacuna gaslights your browser into doing the same, hiding sensitive information whilst keeping true data stored locally.
 
-Why?
+![Why?](images/why.png)
 Every day, 2.5 billion prompts are sent to ChatGPT alone. As university students, it’s virtually impossible to find someone who doesn’t use gen AI weekly, much less daily. For many of us, it’s become pure muscle memory - copying and pasting homework (for conceptual understanding only, we swear), debugging code at 11:57 PM, or summarizing dense 20-page long pdfs that are somehow required reading.
 But that habit has created a massive security blindspot. Across industry and academia, 77% of users paste sensitive data directly into chat boxes, and over 1 in 4 uploaded files contain private/sensitive financial, medical, or proprietary records. People aren’t trying to leak data maliciously, but there are serious security and privacy concerns, especially for personal and individual users. When a breach happens, you’re suddenly dealing with exploited health records, exposed chat histories 💀, or drained AWS credits from leaked API keys. 
 Leaks don’t stop at the prompt box, either. While innocuous, screen sharing on Zoom or Discord can also lead to unintentionally flashing private dashboards or .env files. It only takes a bad actor a single frame or slip up for you to get DDoSed. have your identity stolen, admin password to be gone forever.
 
-How?
+![How?](images/how.png)
 Lacuna acts as a client-side proxy running entirely in your browser memory. Instead of fighting your habits, or requiring a middle step, Lacuna lets you copy + paste or upload whatever you want, splitting the world into what the server sees and what you see. There are two main features:
 
 ## Cloud Filter
