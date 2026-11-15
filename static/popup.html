@@ -48,6 +48,19 @@
     <ul id="dict-list"></ul>
 
     <h2>Vault</h2>
+    <form id="vault-form" title="Redact a value before it's ever sent">
+      <input type="text" id="vault-value" placeholder="Add a key, password, host…" autocomplete="off" spellcheck="false" required />
+      <select id="vault-category">
+        <option value="">Auto</option>
+        <option value="API_KEY">API key</option>
+        <option value="SECRET">Secret</option>
+        <option value="EMAIL">Email</option>
+        <option value="IP">IP</option>
+        <option value="PHONE">Phone</option>
+        <option value="CARD">Card</option>
+      </select>
+      <button type="submit">Add</button>
+    </form>
     <table><tbody id="vault-body"></tbody></table>
     <div class="row">
       <button class="link" id="toggle-originals">Show originals</button>

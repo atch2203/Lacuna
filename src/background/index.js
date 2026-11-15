@@ -10,6 +10,7 @@ import { initialState, reduce, guardOf } from "../guard/share-registry.js";
 import { assignGuardStandIns } from "../guard/guard-vault.js";
 import { restoreSpansFor } from "../docs/restore-spans.js";
 import { activeEntries } from "../engine/vault.js";
+import { manualDetectors } from "../engine/manual.js";
 
 // Every vault read-modify-write runs on one queue so writes never interleave.
 const vaultQueue = serialize(async (task) => task());
@@ -19,7 +20,7 @@ const withVault = (texts, fn, disabled) =>
   vaultQueue(async () => {
     const { vault, dictionary, settings } = await loadState();
     if (!settings.enabled) return disabled(texts);
-    const detectors = [...PATTERN_DETECTORS, ...makeDictionaryDetectors(dictionary)];
+    const detectors = [...PATTERN_DETECTORS, ...makeDictionaryDetectors(dictionary), ...manualDetectors(vault)];
     const before = JSON.stringify(vault.byOriginal);
     const out = texts.map((t) => fn(t, detectors, vault));
     if (JSON.stringify(vault.byOriginal) !== before) await saveVault(vault);
@@ -130,6 +131,7 @@ const HANDLERS = {
     return { spans: restoreSpansFor(msg.texts ?? [], entries) };
   },
   "vault-set-enabled": (msg) => editVault((v) => v.setEnabled(String(msg.original), Boolean(msg.enabled))),
+  "vault-add": (msg) => editVault((v) => v.addManual(msg.value, msg.category || undefined)),
   "vault-remove": (msg) => editVault((v) => v.remove(String(msg.original))),
   "set-manual-guard": (msg) => updateGuard({ type: "manual", on: msg.on }).then((guard) => ({ guard })),
   redact: (msg, sender) =>

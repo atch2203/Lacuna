@@ -67,7 +67,10 @@ async function render() {
               }),
             ]),
             el("td", { textContent: standIn }),
-            el("td", { textContent: showOriginals ? original : mask(original) }),
+            el("td", {}, [
+              showOriginals ? original : mask(original),
+              ...(vault?.manual?.[original] ? [" ", el("span", { className: "cat", textContent: "added" })] : []),
+            ]),
             el("td", {}, [
               el("button", {
                 className: "link danger",
@@ -120,6 +123,14 @@ $("dict-form").addEventListener("submit", async (e) => {
     await chrome.storage.local.set({ dictionary });
   }
   $("term").value = "";
+});
+
+$("vault-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const value = $("vault-value").value.trim();
+  if (!value) return;
+  await chrome.runtime.sendMessage({ type: "vault-add", value, category: $("vault-category").value });
+  $("vault-value").value = "";
 });
 
 $("toggle-originals").addEventListener("click", () => {

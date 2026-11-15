@@ -4,6 +4,7 @@ import { PATTERN_DETECTORS } from "../engine/patterns.js";
 import { makeDictionaryDetectors } from "../engine/dictionary.js";
 import { startScreenGuard } from "./screen-guard.js";
 import { activeEntries } from "../engine/vault.js";
+import { manualDetectors } from "../engine/manual.js";
 import { guardNotice, copiedNotice } from "../demo/notices.js";
 import { restoreClipboardText, handleCopy, performClipboardWrite } from "../demo/clipboard.js";
 import { showInfoBadge, clearNotices } from "../content/badge.js";
@@ -125,8 +126,13 @@ function apply({ restart = false } = {}) {
   }
 }
 
+let dictionaryDetectors = [];
+function rebuildDetectors() {
+  detectors = [...PATTERN_DETECTORS, ...dictionaryDetectors, ...manualDetectors(vault)];
+}
 function setDictionary(dictionary) {
-  detectors = [...PATTERN_DETECTORS, ...makeDictionaryDetectors(dictionary ?? [])];
+  dictionaryDetectors = makeDictionaryDetectors(dictionary ?? []);
+  rebuildDetectors();
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -155,6 +161,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.vault) {
     vault = changes.vault.newValue ?? EMPTY;
+    rebuildDetectors();
     guard?.vaultChanged();
     if (isDocs && canvasPending.size) answerCanvas([...canvasPending]);
   }

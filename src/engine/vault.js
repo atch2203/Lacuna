@@ -1,5 +1,6 @@
 // Global original ⇄ stand-in mapping. Pure: persistence is the caller's job.
 import { fakeLike, tokenFor } from "./fakes.js";
+import { classifyValue } from "./manual.js";
 
 export class Vault {
   // options.rng: random source for fakes (tests pass a seeded one).
@@ -11,6 +12,21 @@ export class Vault {
     // Originals the user switched off: not redacted, not restored. Their fake
     // is kept so re-enabling brings the same fake back.
     this.disabled = { ...(state?.disabled ?? {}) };
+    // Values added by hand: original → category (detected exactly; see manual.js).
+    this.manual = { ...(state?.manual ?? {}) };
+  }
+
+  // Add a value by hand; returns its fake (an existing fake is kept).
+  addManual(value, category) {
+    const v = String(value ?? "").trim();
+    if (!v) return undefined;
+    const cat = category ?? this.manual[v] ?? classifyValue(v);
+    this.manual[v] = cat;
+    return this.standInFor(v, cat);
+  }
+
+  isManual(original) {
+    return this.manual[original] !== undefined;
   }
 
   isDisabled(original) {
@@ -27,6 +43,7 @@ export class Vault {
     if (standIn !== undefined) delete this.byStandIn[standIn];
     delete this.byOriginal[original];
     delete this.disabled[original];
+    delete this.manual[original];
   }
 
   // Every stand-in is a realistic fake with the same length and shape as the
@@ -84,6 +101,7 @@ export class Vault {
       byStandIn: { ...this.byStandIn },
       counters: { ...this.counters },
       disabled: { ...this.disabled },
+      manual: { ...this.manual },
     };
   }
 }
