@@ -38,9 +38,9 @@ function paintsFor(items, ranges, spans, viewportTransform) {
   return paints;
 }
 
-export async function redactPdf(bytes, redactSpans, { pdfjs, render }) {
+export async function redactPdf(bytes, redactSpans, { pdfjs, render, docOptions = {} }) {
   // pdf.js may transfer (detach) the buffer it's given; hand it a copy.
-  const task = pdfjs.getDocument({ data: bytes.slice(), verbosity: 0 });
+  const task = pdfjs.getDocument({ ...docOptions, data: bytes.slice(), verbosity: 0 });
   const src = await task.promise;
   try {
     if (src.numPages > MAX_PAGES) throw new Error(`pdf has more than ${MAX_PAGES} pages`);
