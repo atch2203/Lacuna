@@ -47,7 +47,9 @@ function paintsFor(items, ranges, spans, viewportTransform, measure) {
 // onProgress({ page, pages }) (optional): called after each page is built.
 // Renderers must not draw annotations/form fields: their appearances aren't
 // in the text layer, so they can't be redacted (a warning is returned).
-export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, onProgress, docOptions = {} }) {
+// skipIfClean: when no span is found anywhere, return { status: "clean" } with
+// the original bytes instead of rebuilding (used when restoring files).
+export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, onProgress, skipIfClean = false, docOptions = {} }) {
   // pdf.js may transfer (detach) the buffer it's given; hand it a copy.
   const task = pdfjs.getDocument({ ...docOptions, data: bytes.slice(), verbosity: 0 });
   const src = await task.promise;
@@ -68,6 +70,7 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, on
 
     const allSpans = await redactSpans(pages.map((p) => p.text.replace(UNMAPPED, "-")));
     const unmapped = pages.reduce((n, p) => n + (p.text.match(UNMAPPED)?.length ?? 0), 0);
+    if (skipIfClean && allSpans.every((s) => s.length === 0)) return { status: "clean", bytes, count: 0 };
 
     const out = await PDFDocument.create();
     const font = await out.embedFont(StandardFonts.Helvetica);

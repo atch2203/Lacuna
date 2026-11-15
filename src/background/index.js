@@ -8,6 +8,7 @@ import { serialize } from "../shared/serialize.js";
 import { loadState, saveVault } from "../content/store.js";
 import { initialState, reduce, guardOf } from "../guard/share-registry.js";
 import { assignGuardStandIns } from "../guard/guard-vault.js";
+import { restoreSpansFor } from "../docs/restore-spans.js";
 
 // Both message types share one queue so vault writes never interleave.
 // fn(texts, detectors, vault) → result; `disabled(texts)` is returned when off.
@@ -85,6 +86,14 @@ const HANDLERS = {
   "share-ended": shareEvent("share-ended"),
   "share-reset": shareEvent("share-reset"),
   "guard-stand-ins": (msg) => assignGuard(msg.items),
+  "restore-spans": async (msg) => {
+    const [{ vault }, { guardVault }] = await Promise.all([
+      chrome.storage.local.get("vault"),
+      chrome.storage.session.get("guardVault"),
+    ]);
+    const entries = [...Object.entries(vault?.byStandIn ?? {}), ...Object.entries(guardVault?.byStandIn ?? {})];
+    return { spans: restoreSpansFor(msg.texts ?? [], entries) };
+  },
   "set-manual-guard": (msg) => updateGuard({ type: "manual", on: msg.on }).then((guard) => ({ guard })),
   redact: (msg) =>
     redactTexts(msg.texts).then((out) => ({ texts: out.map((o) => o.text), swaps: out.flatMap((o) => o.swaps) })),

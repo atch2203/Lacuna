@@ -32,6 +32,12 @@ const docOptions = {
 
 const trace = (step) => toParent({ type: "trace", step });
 
+async function restoreSpans(texts) {
+  const res = await chrome.runtime.sendMessage({ type: "restore-spans", texts });
+  if (!res || res.error) throw new Error(res?.error ?? "no response from service worker");
+  return res.spans;
+}
+
 async function redactSpans(texts) {
   trace(`redact-spans request (${texts.length} texts)`);
   const res = await chrome.runtime.sendMessage({ type: "redact-spans", texts });
@@ -41,7 +47,7 @@ async function redactSpans(texts) {
 }
 
 // onProgress is per request so the page side can extend that request's timeout.
-const handlersFor = (onProgress) => ({
+const handlersFor = (onProgress, { skipIfClean = false } = {}) => ({
   text: redactText,
   docx: redactDocx,
   pdf: (bytes, spans) =>
@@ -50,6 +56,7 @@ const handlersFor = (onProgress) => ({
       docOptions,
       measure: measureText,
       onProgress,
+      skipIfClean,
       render: async (page, viewport, paints) => {
         trace(`render page ${page.pageNumber} (${paints.length} paints)`);
         const jpeg = await renderPage(page, viewport, paints, pdfjs.AnnotationMode.DISABLE);
@@ -63,13 +70,23 @@ window.addEventListener("message", async (event) => {
   const msg = event.data;
   if (msg?.source === SOURCE) trace(`got ${msg.type} sourceIsParent=${event.source === window.parent} origin=${event.origin}`);
   if (event.source !== window.parent || !ALLOWED_ORIGINS.has(event.origin)) return;
-  if (!msg || msg.source !== SOURCE || msg.type !== "redact") return;
+  if (!msg || msg.source !== SOURCE || (msg.type !== "redact" && msg.type !== "restore")) return;
+  const restoring = msg.type === "restore";
   const reply = (data, transfer = []) =>
     window.parent.postMessage({ source: SOURCE, type: "result", id: msg.id, ...data }, event.origin, transfer);
   const onProgress = (p) => window.parent.postMessage({ source: SOURCE, type: "progress", id: msg.id, ...p }, event.origin);
   try {
     trace(`redacting ${msg.name} (${msg.buffer?.byteLength} bytes)`);
-    const out = await redactFile({ name: msg.name, type: msg.mime, bytes: new Uint8Array(msg.buffer) }, redactSpans, handlersFor(onProgress));
+    const input = new Uint8Array(msg.buffer);
+    const out = await redactFile(
+      { name: msg.name, type: msg.mime, bytes: input },
+      restoring ? restoreSpans : redactSpans,
+      handlersFor(onProgress, { skipIfClean: restoring }),
+    );
+    if (restoring && (out.status === "clean" || out.count === 0)) {
+      reply({ status: "clean", count: 0 });
+      return;
+    }
     const buffer = out.bytes.buffer.slice(out.bytes.byteOffset, out.bytes.byteOffset + out.bytes.byteLength);
     reply({ status: out.status, count: out.count, warnings: out.warnings, buffer }, [buffer]);
   } catch (err) {

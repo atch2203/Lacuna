@@ -6,7 +6,7 @@ import { loadState, onStateChange } from "./store.js";
 import { startDomRestorer } from "./dom-restorer.js";
 import { showWarningBadge, showInfoBadge, clearNotices } from "./badge.js";
 import { startFileInterceptor } from "./file-interceptor.js";
-import { redactInFrame } from "./docframe-client.js";
+import { redactInFrame, restoreInFrame } from "./docframe-client.js";
 import { sentNotice, restoredNotice, fileNotice } from "../demo/notices.js";
 
 let restore = makeRestorer([]);
@@ -93,4 +93,21 @@ startFileInterceptor({
     working: (message) => showInfoBadge(message, { timeoutMs: 0 }),
     warn: (message) => showWarningBadge(message),
   },
+});
+
+// Generated files: the page script hands us file bytes to restore.
+const FILE = "llm-redactor-file";
+window.addEventListener("message", async (event) => {
+  const msg = event.data;
+  if (event.source !== window || msg?.source !== FILE || msg.type !== "restore") return;
+  let bytes = null;
+  if (enabled && !guardActive) {
+    try {
+      bytes = await restoreInFrame({ name: msg.name, mime: msg.mime, buffer: msg.buffer });
+    } catch {
+      bytes = null; // fail open: the site shows the file as generated
+    }
+  }
+  const buffer = bytes ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) : null;
+  window.postMessage({ source: FILE, type: "restored", id: msg.id, buffer }, "*", buffer ? [buffer] : []);
 });
