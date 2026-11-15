@@ -25,22 +25,32 @@ function makeAvoid(text) {
   };
 }
 
-// Non-overlapping, sorted spans with stand-ins assigned left-to-right
-// (so numbering follows reading order).
-export function findRedactions(text, detectors, vault) {
+// Non-overlapping, sorted sensitive spans; no vault access.
+export function findSensitive(text, detectors) {
   const spans = [];
   for (const detector of detectors) {
     for (const span of detector.find(text)) {
       if (span.end > span.start) spans.push({ ...span, detector });
     }
   }
-  if (spans.length === 0) return [];
-
-  const avoid = makeAvoid(text);
   return resolveOverlaps(spans).map(({ start, end, detector }) => ({
     start,
     end,
-    standIn: vault.standInFor(text.slice(start, end), detector.category, detector.style, avoid),
+    category: detector.category,
+    style: detector.style,
+  }));
+}
+
+// Like findSensitive, plus stand-ins assigned left-to-right (so numbering
+// follows reading order).
+export function findRedactions(text, detectors, vault) {
+  const spans = findSensitive(text, detectors);
+  if (spans.length === 0) return [];
+  const avoid = makeAvoid(text);
+  return spans.map(({ start, end, category, style }) => ({
+    start,
+    end,
+    standIn: vault.standInFor(text.slice(start, end), category, style, avoid),
   }));
 }
 
