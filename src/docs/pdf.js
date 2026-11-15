@@ -13,6 +13,10 @@ const MAX_PAGES = 100;
 const MAX_SCALE = 2;
 const MAX_SIDE_PX = 4096;
 const PAD_EM = 0.15;
+// Glyphs with no Unicode mapping come out of pdf.js as private-use characters
+// (Chrome's "Print to PDF" does this for "-" and ":"). Treat them as a
+// separator for detection, one-for-one so offsets don't move.
+const UNMAPPED = /[\uE000-\uF8FF]/g;
 
 // Characters the font can't encode become "?" (hidden layer only).
 export function hiddenText(str, font) {
@@ -62,7 +66,8 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, on
     // Still rebuild when there are annotations, so form fields get removed.
     if (!annotations && pages.every((p) => p.text.trim() === "")) return { status: "no-text", bytes, count: 0 };
 
-    const allSpans = await redactSpans(pages.map((p) => p.text));
+    const allSpans = await redactSpans(pages.map((p) => p.text.replace(UNMAPPED, "-")));
+    const unmapped = pages.reduce((n, p) => n + (p.text.match(UNMAPPED)?.length ?? 0), 0);
 
     const out = await PDFDocument.create();
     const font = await out.embedFont(StandardFonts.Helvetica);
@@ -102,9 +107,13 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, on
       onProgress?.({ page: i + 1, pages: pages.length });
     }
 
-    const warnings = annotations
-      ? [`${annotations} form field${annotations === 1 ? "" : "s"}/annotation${annotations === 1 ? "" : "s"} removed (not redactable)`]
-      : [];
+    const warnings = [];
+    if (annotations) {
+      warnings.push(`${annotations} form field${annotations === 1 ? "" : "s"}/annotation${annotations === 1 ? "" : "s"} removed (not redactable)`);
+    }
+    if (unmapped) {
+      warnings.push(`${unmapped} character${unmapped === 1 ? "" : "s"} couldn't be read reliably — check the preview for unredacted values`);
+    }
     return { bytes: await out.save(), count, warnings };
   } finally {
     await task.destroy();

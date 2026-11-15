@@ -167,3 +167,29 @@ test("onProgress is called once per page", async () => {
     { page: 3, pages: 3 },
   ]);
 });
+
+// Bug: Chrome-printed PDFs map some glyphs (here "-" and ":") to private-use
+// characters with no Unicode mapping, so "123-45-6789" was read as
+// "123456789" and the SSN was never detected — it stayed visible
+// in the page image the model reads.
+test("Chrome-printed PDF: SSN with unmapped hyphen glyphs is redacted", async () => {
+  const input = new Uint8Array(readFileSync(new URL("./fixtures/chrome-print-pua.pdf", import.meta.url)));
+  const { render, paints } = stubRenderer();
+  const spansSeen = [];
+  const redactSpans = realRedactSpans();
+  const out = await redactPdf(input, async (texts) => {
+    const res = await redactSpans(texts);
+    spansSeen.push(...res.flat());
+    return res;
+  }, { pdfjs, render });
+  const text = await extractText(out.bytes);
+  assert.ok(!text.includes("6789"), text);
+  assert.ok(!text.includes("alice@example.com"), text);
+  assert.equal(paints.filter((p) => p.standIn).length, 3, "email, SSN and key painted");
+});
+
+test("PDF with undecodable characters warns the user", async () => {
+  const input = new Uint8Array(readFileSync(new URL("./fixtures/chrome-print-pua.pdf", import.meta.url)));
+  const out = await redactPdf(input, realRedactSpans(), { pdfjs, render: stubRenderer().render });
+  assert.ok(out.warnings.some((w) => /couldn't be read/.test(w)), JSON.stringify(out.warnings));
+});
