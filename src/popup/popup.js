@@ -51,7 +51,8 @@ async function render() {
       : [el("li", { className: "empty", textContent: "No terms yet." })]),
   );
 
-  const rows = Object.entries(vault?.byStandIn ?? {});
+  // One row per item, showing its current placeholder (old ones are aliases).
+  const rows = Object.entries(vault?.byOriginal ?? {}).map(([original, standIn]) => [standIn, original]);
   const disabled = vault?.disabled ?? {};
   $("vault-body").replaceChildren(
     ...(rows.length
@@ -66,7 +67,24 @@ async function render() {
                 onchange: (e) => chrome.runtime.sendMessage({ type: "vault-set-enabled", original, enabled: e.target.checked }),
               }),
             ]),
-            el("td", { textContent: standIn }),
+            el("td", {}, [
+              el("input", {
+                type: "text",
+                className: "standin",
+                value: standIn,
+                title: "Edit the placeholder (Enter to save)",
+                spellcheck: false,
+                onkeydown: (e) => e.key === "Enter" && e.target.blur(),
+                onchange: async (e) => {
+                  const res = await chrome.runtime.sendMessage({ type: "vault-set-standin", original, standIn: e.target.value });
+                  if (!res?.ok) {
+                    e.target.value = standIn;
+                    e.target.title = `Not saved: ${res?.error ?? "unknown error"}`;
+                    e.target.classList.add("invalid");
+                  }
+                },
+              }),
+            ]),
             el("td", {}, [
               showOriginals ? original : mask(original),
               ...(vault?.manual?.[original] ? [" ", el("span", { className: "cat", textContent: "added" })] : []),

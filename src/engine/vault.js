@@ -25,6 +25,28 @@ export class Vault {
     return this.standInFor(v, cat);
   }
 
+  // Replace an item's placeholder. The old placeholder stays as an alias so
+  // chats that already used it still restore. → { ok: true } | { error }
+  setStandIn(original, standIn) {
+    const next = String(standIn ?? "").trim();
+    if (this.byOriginal[original] === undefined) return { error: "not in the vault" };
+    if (!next) return { error: "placeholder can't be empty" };
+    if (next === original) return { error: "placeholder is the same as the real value" };
+    if (next === this.byOriginal[original]) return { ok: true };
+    const owner = this.byStandIn[next];
+    if ((owner !== undefined && owner !== original) || this.byOriginal[next] !== undefined) {
+      return { error: "already used by another vault item" };
+    }
+    this.byOriginal[original] = next;
+    this.byStandIn[next] = original;
+    return { ok: true };
+  }
+
+  // One [currentStandIn, original] per item (no old aliases).
+  currentEntries() {
+    return Object.entries(this.byOriginal).map(([original, standIn]) => [standIn, original]);
+  }
+
   isManual(original) {
     return this.manual[original] !== undefined;
   }
@@ -39,8 +61,7 @@ export class Vault {
   }
 
   remove(original) {
-    const standIn = this.byOriginal[original];
-    if (standIn !== undefined) delete this.byStandIn[standIn];
+    for (const [standIn, o] of Object.entries(this.byStandIn)) if (o === original) delete this.byStandIn[standIn];
     delete this.byOriginal[original];
     delete this.disabled[original];
     delete this.manual[original];

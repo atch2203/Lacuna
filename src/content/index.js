@@ -27,7 +27,7 @@ function applyState(state) {
   enabled = state.settings.enabled;
   demo = state.settings.demoNotifications === true;
   restore = makeRestorer(state.vault.entries());
-  const all = Object.entries(state.vault.byStandIn);
+  const all = state.vault.currentEntries();
   reverseAll = makeReverser(all);
   reverseDisabled = makeReverser(all.filter(([, original]) => state.vault.isDisabled(original)));
   restorer?.refresh();

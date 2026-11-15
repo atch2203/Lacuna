@@ -131,6 +131,13 @@ const HANDLERS = {
     return { spans: restoreSpansFor(msg.texts ?? [], entries) };
   },
   "vault-set-enabled": (msg) => editVault((v) => v.setEnabled(String(msg.original), Boolean(msg.enabled))),
+  "vault-set-standin": (msg) =>
+    vaultQueue(async () => {
+      const { vault } = await loadState();
+      const result = vault.setStandIn(String(msg.original), msg.standIn);
+      if (result.ok) await saveVault(vault);
+      return result;
+    }),
   "vault-add": (msg) => editVault((v) => v.addManual(msg.value, msg.category || undefined)),
   "vault-remove": (msg) => editVault((v) => v.remove(String(msg.original))),
   "set-manual-guard": (msg) => updateGuard({ type: "manual", on: msg.on }).then((guard) => ({ guard })),
