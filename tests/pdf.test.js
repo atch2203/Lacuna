@@ -57,8 +57,8 @@ test("redacted PDF: stand-ins in extracted text, originals gone, page size kept"
 
   assert.equal(out.count, 2);
   const text = await extractText(out.bytes);
-  assert.match(text, /[a-z]+\.[a-z]+@example\.com/);
-  assert.match(text, /\[API_KEY_1\]/);
+  assert.match(text, /AKIA[A-Z0-9]{16}/);
+  assert.match(text, /\b[a-z]{4}@[a-z]{4}\.io\b/);
   assert.ok(!text.includes("jane@corp.io"));
   assert.ok(!text.includes("AKIAIOSFODNN7EXAMPLE"));
 
@@ -69,7 +69,9 @@ test("redacted PDF: stand-ins in extracted text, originals gone, page size kept"
   assert.equal(doc.getAuthor(), undefined);
   assert.equal(doc.getPage(0).node.Annots()?.size() ?? 0, 0);
 
-  assert.deepEqual(paints.map((p) => p.standIn).filter(Boolean).sort(), ["[API_KEY_1]", paints.find((p) => p.standIn.includes("@"))?.standIn].sort());
+  const drawn = paints.map((p) => p.standIn).filter(Boolean);
+  assert.equal(drawn.length, 2);
+  assert.ok(drawn.some((s) => /^AKIA[A-Z0-9]{16}$/.test(s)));
   for (const p of paints) assert.ok(p.w > 0 && p.h > 0 && p.fontPx > 0);
 });
 
@@ -141,7 +143,7 @@ test("rotated page: rendered unrotated, output keeps size and rotation", async (
   assert.deepEqual(viewports[0], { width: 1200, height: 800, rotation: 0 });
   const outPage = (await PDFDocument.load(out.bytes)).getPage(0);
   assert.deepEqual([outPage.getWidth(), outPage.getHeight(), outPage.getRotation().angle], [600, 400, 90]);
-  assert.match(await extractText(out.bytes), /\[API_KEY_1\]/);
+  assert.match(await extractText(out.bytes), /AKIA[A-Z0-9]{16}/);
 });
 
 test("rotated text keeps its direction in the hidden layer", async () => {

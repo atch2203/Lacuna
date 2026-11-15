@@ -43,8 +43,10 @@ export function findSensitive(text, detectors) {
 
 // Like findSensitive, plus stand-ins assigned left-to-right (so numbering
 // follows reading order).
+// Spans that already are stand-ins (e.g. a fake pasted back from a reply)
+// are left alone, so a fake never gets its own fake.
 export function findRedactions(text, detectors, vault) {
-  const spans = findSensitive(text, detectors);
+  const spans = findSensitive(text, detectors).filter(({ start, end }) => !vault.isStandIn?.(text.slice(start, end)));
   if (spans.length === 0) return [];
   const avoid = makeAvoid(text);
   return spans.map(({ start, end, category, style }) => ({

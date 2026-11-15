@@ -87,14 +87,14 @@ test("known stand-ins are left alone, not masked", () => {
 // --- I5 + C1: guard stand-ins live in a capped, session-only map ------------
 test("assignGuardStandIns uses category directly (context-only detectors work)", () => {
   const out = assignGuardStandIns(new Vault().toJSON(), new Vault().toJSON(), [{ original: "hunter2", category: "SECRET", style: "token" }]);
-  assert.equal(out.byOriginal.hunter2, "[SECRET_1]");
+  assert.match(out.byOriginal.hunter2, /^[a-z]{6}\d$/);
 });
 
 test("guard stand-ins never collide with persistent vault stand-ins", () => {
   const persistent = new Vault();
-  persistent.standInFor("10.0.0.1", "IP", "token"); // [IP_1]
+  const taken = persistent.standInFor("10.0.0.1", "IP", "token");
   const out = assignGuardStandIns(new Vault().toJSON(), persistent.toJSON(), [{ original: "10.0.0.2", category: "IP", style: "token" }]);
-  assert.notEqual(out.byOriginal["10.0.0.2"], "[IP_1]");
+  assert.notEqual(out.byOriginal["10.0.0.2"], taken);
 });
 
 test("guard map is capped", () => {

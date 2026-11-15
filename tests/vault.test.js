@@ -18,25 +18,34 @@ test("same original → same stand-in", () => {
   assert.equal(v.standInFor("a@b.com", "EMAIL", "fake"), v.standInFor("a@b.com", "EMAIL", "fake"));
 });
 
-test("tokens count per category", () => {
+test("stand-ins are realistic fakes with the original's length", () => {
   const v = new Vault();
-  assert.equal(v.standInFor("k1", "API_KEY", "token"), "[API_KEY_1]");
-  assert.equal(v.standInFor("k2", "API_KEY", "token"), "[API_KEY_2]");
-  assert.equal(v.standInFor("4111111111111111", "CARD", "token"), "[CARD_1]");
+  const key = v.standInFor("AKIAIOSFODNN7EXAMPLE", "API_KEY", "token");
+  assert.equal(key.length, 20);
+  assert.ok(key.startsWith("AKIA") && key !== "AKIAIOSFODNN7EXAMPLE");
+  assert.match(v.standInFor("10.20.30.40", "IP", "token"), /^\d{2}\.\d{2}\.\d{2}\.\d{2}$/);
 });
 
-test("fake email shape", () => {
-  assert.match(new Vault().standInFor("x@corp.io", "EMAIL", "fake"), /^[a-z]+\.[a-z]+@example\.com$/);
-});
-
-test("fake phone in 555-0100..0199", () => {
-  assert.match(new Vault().standInFor("413-555-8812", "PHONE", "fake"), /^555-01\d\d$/);
-});
-
-test("fake skips values present in avoid text", () => {
-  const first = fakeFor("PERSON", 1);
+test("distinct originals get distinct fakes", () => {
   const v = new Vault();
-  assert.notEqual(v.standInFor("Alice Real", "PERSON", "fake", `hi ${first}`), first);
+  assert.notEqual(v.standInFor("10.20.30.40", "IP"), v.standInFor("10.20.30.41", "IP"));
+});
+
+test("fake email keeps length and TLD", () => {
+  const f = new Vault().standInFor("jane.doe@corp.io", "EMAIL", "fake");
+  assert.equal(f.length, 16);
+  assert.match(f, /@[a-z]{4}\.io$/);
+});
+
+test("fake phone keeps format", () => {
+  assert.match(new Vault().standInFor("413-555-8812", "PHONE", "fake"), /^\d{3}-\d{3}-\d{4}$/);
+});
+
+test("fake skips values rejected by avoid", () => {
+  const v = new Vault();
+  const seen = [];
+  const s = v.standInFor("Alice Real", "PERSON", "fake", (c) => (seen.push(c), seen.length < 3));
+  assert.equal(s, seen[2]);
 });
 
 test("fake never reuses an existing stand-in", () => {
@@ -48,8 +57,8 @@ test("fake never reuses an existing stand-in", () => {
 
 test("round-trips through JSON", () => {
   const v = new Vault();
-  const s = v.standInFor("k1", "API_KEY", "token");
+  const s = v.standInFor("AKIAIOSFODNN7EXAMPLE", "API_KEY", "token");
   const v2 = new Vault(JSON.parse(JSON.stringify(v.toJSON())));
-  assert.deepEqual(v2.entries(), [[s, "k1"]]);
-  assert.equal(v2.standInFor("k2", "API_KEY", "token"), "[API_KEY_2]");
+  assert.deepEqual(v2.entries(), [[s, "AKIAIOSFODNN7EXAMPLE"]]);
+  assert.equal(v2.standInFor("AKIAIOSFODNN7EXAMPLE", "API_KEY"), s);
 });

@@ -44,10 +44,14 @@ test("equal-length overlap: earliest wins", () => {
   assert.deepEqual(r.map((s) => [s.start, s.end]), [[1, 6]]);
 });
 
-test("redact replaces all, consistent for repeats", () => {
+test("redact replaces all, consistent for repeats, same length", () => {
   const v = new Vault();
-  const out = redact("key AKIAIOSFODNN7EXAMPLE and AKIAIOSFODNN7EXAMPLE", PATTERN_DETECTORS, v);
-  assert.equal(out, "key [API_KEY_1] and [API_KEY_1]");
+  const input = "key AKIAIOSFODNN7EXAMPLE and AKIAIOSFODNN7EXAMPLE";
+  const out = redact(input, PATTERN_DETECTORS, v);
+  assert.equal(out.length, input.length);
+  assert.ok(!out.includes("AKIAIOSFODNN7EXAMPLE"));
+  const fake = v.byOriginal.AKIAIOSFODNN7EXAMPLE;
+  assert.equal(out, `key ${fake} and ${fake}`);
 });
 
 test("redact leaves clean text identical", () => {
@@ -57,18 +61,15 @@ test("redact leaves clean text identical", () => {
 test("redact mixes dictionary and patterns", () => {
   const v = new Vault();
   const dets = [...PATTERN_DETECTORS, ...makeDictionaryDetectors([{ term: "Project Falcon", category: "OTHER" }])];
-  assert.equal(redact("Project Falcon key AKIAIOSFODNN7EXAMPLE", dets, v), "[OTHER_1] key [API_KEY_1]");
+  const out = redact("Project Falcon key AKIAIOSFODNN7EXAMPLE", dets, v);
+  assert.equal(out, `${v.byOriginal["Project Falcon"]} key ${v.byOriginal.AKIAIOSFODNN7EXAMPLE}`);
+  assert.match(v.byOriginal["Project Falcon"], /^[A-Z][a-z]{6} [A-Z][a-z]{5}$/);
 });
 
-test("fake never equals text already in the prompt", () => {
-  const v = new Vault();
-  const first = fakeFor("PERSON", 1);
-  const dets = makeDictionaryDetectors([{ term: "Bob Real", category: "PERSON" }]);
-  assert.ok(!redact(`Bob Real met ${first}`, dets, v).startsWith(first));
-});
 
-test("stand-in numbering follows reading order", () => {
+
+test("different originals get different fakes", () => {
   const v = new Vault();
-  const out = redact("AKIAAAAAAAAAAAAAAAAA then AKIABBBBBBBBBBBBBBBB", PATTERN_DETECTORS, v);
-  assert.equal(out, "[API_KEY_1] then [API_KEY_2]");
+  redact("AKIAAAAAAAAAAAAAAAAA then AKIABBBBBBBBBBBBBBBB", PATTERN_DETECTORS, v);
+  assert.notEqual(v.byOriginal.AKIAAAAAAAAAAAAAAAAA, v.byOriginal.AKIABBBBBBBBBBBBBBBB);
 });
