@@ -1,6 +1,6 @@
 // ISOLATED-world entry: relays redaction requests from the MAIN-world hooks
 // to the service worker (sole vault writer) and restores stand-ins on the page.
-import { makeRestorer } from "../engine/restore.js";
+import { makeRestorer, makeReverser } from "../engine/restore.js";
 import { serveRedaction } from "../shared/bridge.js";
 import { loadState, onStateChange } from "./store.js";
 import { startDomRestorer } from "./dom-restorer.js";
@@ -10,6 +10,10 @@ import { redactInFrame, restoreInFrame } from "./docframe-client.js";
 import { sentNotice, restoredNotice, fileNotice } from "../demo/notices.js";
 
 let restore = makeRestorer([]);
+// Puts placeholders back where originals were restored: for every item when
+// the extension is switched off, and for items the user disabled.
+let reverseAll = makeReverser([]);
+let reverseDisabled = makeReverser([]);
 let restorer = null;
 let enabled = true;
 let demo = false;
@@ -23,6 +27,9 @@ function applyState(state) {
   enabled = state.settings.enabled;
   demo = state.settings.demoNotifications === true;
   restore = makeRestorer(state.vault.entries());
+  const all = Object.entries(state.vault.byStandIn);
+  reverseAll = makeReverser(all);
+  reverseDisabled = makeReverser(all.filter(([, original]) => state.vault.isDisabled(original)));
   restorer?.refresh();
 }
 
@@ -81,7 +88,9 @@ const restoreAndCount = (text) => {
 };
 
 restorer = startDomRestorer({
-  getRestore: () => (!enabled ? restore : guardActive || !guardKnown ? identity : restoreAndCount),
+  // Off: show what the model actually received (placeholders), no restoring.
+  getRestore: () =>
+    !enabled ? reverseAll : guardActive || !guardKnown ? identity : (text) => restoreAndCount(reverseDisabled(text)),
 });
 
 startFileInterceptor({

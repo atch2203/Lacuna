@@ -8,6 +8,25 @@ export class Vault {
     this.byOriginal = { ...(state?.byOriginal ?? {}) };
     this.byStandIn = { ...(state?.byStandIn ?? {}) };
     this.counters = { ...(state?.counters ?? {}) };
+    // Originals the user switched off: not redacted, not restored. Their fake
+    // is kept so re-enabling brings the same fake back.
+    this.disabled = { ...(state?.disabled ?? {}) };
+  }
+
+  isDisabled(original) {
+    return this.disabled[original] === true;
+  }
+
+  setEnabled(original, enabled) {
+    if (enabled) delete this.disabled[original];
+    else if (this.byOriginal[original] !== undefined) this.disabled[original] = true;
+  }
+
+  remove(original) {
+    const standIn = this.byOriginal[original];
+    if (standIn !== undefined) delete this.byStandIn[standIn];
+    delete this.byOriginal[original];
+    delete this.disabled[original];
   }
 
   // Every stand-in is a realistic fake with the same length and shape as the
@@ -48,8 +67,9 @@ export class Vault {
     return this.byStandIn[text] !== undefined;
   }
 
+  // [standIn, original] pairs of enabled items (what gets restored).
   entries() {
-    return Object.entries(this.byStandIn);
+    return activeEntries(this);
   }
 
   // Empty mappings, same counters: stand-ins already sent out (and still in
@@ -63,6 +83,13 @@ export class Vault {
       byOriginal: { ...this.byOriginal },
       byStandIn: { ...this.byStandIn },
       counters: { ...this.counters },
+      disabled: { ...this.disabled },
     };
   }
+}
+
+// Enabled [standIn, original] pairs of a vault or its JSON state.
+export function activeEntries(state) {
+  const disabled = state?.disabled ?? {};
+  return Object.entries(state?.byStandIn ?? {}).filter(([, original]) => disabled[original] !== true);
 }

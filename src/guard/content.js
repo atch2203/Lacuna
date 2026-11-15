@@ -3,6 +3,7 @@
 import { PATTERN_DETECTORS } from "../engine/patterns.js";
 import { makeDictionaryDetectors } from "../engine/dictionary.js";
 import { startScreenGuard } from "./screen-guard.js";
+import { activeEntries } from "../engine/vault.js";
 import { guardNotice, copiedNotice } from "../demo/notices.js";
 import { restoreClipboardText, handleCopy, performClipboardWrite } from "../demo/clipboard.js";
 import { showInfoBadge, clearNotices } from "../content/badge.js";
@@ -67,6 +68,8 @@ function start() {
     getDetectors: () => detectors,
     lookup: (o) => {
       noteHidden(o);
+      // A value the user switched off is shown as-is.
+      if (vault.disabled?.[o]) return o;
       const standIn = vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o];
       if (standIn !== undefined) ownStandIns.set(standIn, o);
       return standIn;
@@ -81,7 +84,7 @@ const CANVAS = "llm-redactor-canvas";
 const isDocs = location.hostname === "docs.google.com";
 const canvasPending = new Set();
 const toCanvas = (msg) => window.postMessage({ source: CANVAS, ...msg }, "*");
-const standInOf = (o) => vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o];
+const standInOf = (o) => (vault.disabled?.[o] ? o : vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o]);
 
 function answerCanvas(originals) {
   const map = {};
@@ -186,7 +189,7 @@ const isAiHost = AI_HOSTS.has(location.hostname);
 // them into the DOM), so all stand-ins apply there; elsewhere only this page's.
 const clipEntries = () =>
   isAiHost
-    ? [...Object.entries(vault.byStandIn ?? {}), ...Object.entries(guardVault.byStandIn ?? {})]
+    ? [...activeEntries(vault), ...activeEntries(guardVault)]
     : [...ownStandIns];
 const restoreClip = (text) => restoreClipboardText(text, clipEntries());
 

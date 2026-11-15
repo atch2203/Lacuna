@@ -52,14 +52,32 @@ async function render() {
   );
 
   const rows = Object.entries(vault?.byStandIn ?? {});
+  const disabled = vault?.disabled ?? {};
   $("vault-body").replaceChildren(
     ...(rows.length
-      ? rows.map(([standIn, original]) =>
-          el("tr", {}, [
+      ? rows.map(([standIn, original]) => {
+          const on = disabled[original] !== true;
+          return el("tr", { className: on ? "" : "off" }, [
+            el("td", {}, [
+              el("input", {
+                type: "checkbox",
+                checked: on,
+                title: on ? "Redacted — untick to send as-is" : "Not redacted — tick to redact again",
+                onchange: (e) => chrome.runtime.sendMessage({ type: "vault-set-enabled", original, enabled: e.target.checked }),
+              }),
+            ]),
             el("td", { textContent: standIn }),
             el("td", { textContent: showOriginals ? original : mask(original) }),
-          ]),
-        )
+            el("td", {}, [
+              el("button", {
+                className: "link danger",
+                textContent: "Remove",
+                title: "Forget this item (it gets a new fake next time)",
+                onclick: () => chrome.runtime.sendMessage({ type: "vault-remove", original }),
+              }),
+            ]),
+          ]);
+        })
       : [el("tr", {}, [el("td", { className: "empty", textContent: "Nothing redacted yet." })])]),
   );
   $("toggle-originals").textContent = showOriginals ? "Hide originals" : "Show originals";

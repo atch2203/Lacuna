@@ -55,3 +55,9 @@ export function makeRestorer(entries) {
   restore.standInsIn = (text) => text.match(regex) ?? [];
   return restore;
 }
+
+// The inverse: originals → their stand-ins, used to put placeholders back on
+// screen when the extension is switched off. entries: Array<[standIn, original]>
+export function makeReverser(entries) {
+  return makeRestorer(entries.map(([standIn, original]) => [original, standIn]));
+}

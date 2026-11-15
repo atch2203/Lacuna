@@ -79,7 +79,14 @@ function dictionaryStandIn(original, detector, vault, avoid) {
 // Spans that already are stand-ins (e.g. a fake pasted back from a reply)
 // are left alone, so a fake never gets its own fake.
 export function findRedactions(text, detectors, vault) {
-  const spans = detectedSpans(text, detectors).filter(({ start, end }) => !vault.isStandIn?.(text.slice(start, end)));
+  const spans = detectedSpans(text, detectors).filter(({ start, end, detector }) => {
+    const original = text.slice(start, end);
+    if (vault.isStandIn?.(original)) return false;
+    // Items the user switched off are sent as-is (a disabled dictionary term
+    // switches off its capitalisations and name parts too).
+    const canonical = detector.fullTerm ?? detector.canonical;
+    return !vault.isDisabled?.(original) && !(canonical !== undefined && vault.isDisabled?.(canonical));
+  });
   if (spans.length === 0) return [];
   const avoid = makeAvoid(text);
   return spans.map(({ start, end, detector }) => {

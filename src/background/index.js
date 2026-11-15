@@ -9,18 +9,31 @@ import { loadState, saveVault } from "../content/store.js";
 import { initialState, reduce, guardOf } from "../guard/share-registry.js";
 import { assignGuardStandIns } from "../guard/guard-vault.js";
 import { restoreSpansFor } from "../docs/restore-spans.js";
+import { activeEntries } from "../engine/vault.js";
 
-// Both message types share one queue so vault writes never interleave.
+// Every vault read-modify-write runs on one queue so writes never interleave.
+const vaultQueue = serialize(async (task) => task());
+
 // fn(texts, detectors, vault) → result; `disabled(texts)` is returned when off.
-const withVault = serialize(async (texts, fn, disabled) => {
-  const { vault, dictionary, settings } = await loadState();
-  if (!settings.enabled) return disabled(texts);
-  const detectors = [...PATTERN_DETECTORS, ...makeDictionaryDetectors(dictionary)];
-  const before = vault.entries().length;
-  const out = texts.map((t) => fn(t, detectors, vault));
-  if (vault.entries().length !== before) await saveVault(vault);
-  return out;
-});
+const withVault = (texts, fn, disabled) =>
+  vaultQueue(async () => {
+    const { vault, dictionary, settings } = await loadState();
+    if (!settings.enabled) return disabled(texts);
+    const detectors = [...PATTERN_DETECTORS, ...makeDictionaryDetectors(dictionary)];
+    const before = JSON.stringify(vault.byOriginal);
+    const out = texts.map((t) => fn(t, detectors, vault));
+    if (JSON.stringify(vault.byOriginal) !== before) await saveVault(vault);
+    return out;
+  });
+
+// Popup edits (per-item enable/disable, remove), on the same queue.
+const editVault = (mutate) =>
+  vaultQueue(async () => {
+    const { vault } = await loadState();
+    mutate(vault);
+    await saveVault(vault);
+    return {};
+  });
 
 // Redacted text plus the swaps made (for demo notices).
 function redactWithSwaps(text, detectors, vault) {
@@ -113,9 +126,11 @@ const HANDLERS = {
       chrome.storage.local.get("vault"),
       chrome.storage.session.get("guardVault"),
     ]);
-    const entries = [...Object.entries(vault?.byStandIn ?? {}), ...Object.entries(guardVault?.byStandIn ?? {})];
+    const entries = [...activeEntries(vault), ...activeEntries(guardVault)];
     return { spans: restoreSpansFor(msg.texts ?? [], entries) };
   },
+  "vault-set-enabled": (msg) => editVault((v) => v.setEnabled(String(msg.original), Boolean(msg.enabled))),
+  "vault-remove": (msg) => editVault((v) => v.remove(String(msg.original))),
   "set-manual-guard": (msg) => updateGuard({ type: "manual", on: msg.on }).then((guard) => ({ guard })),
   redact: (msg, sender) =>
     redactTexts(msg.texts).then(async (out) => {
