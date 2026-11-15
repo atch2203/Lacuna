@@ -25,22 +25,32 @@ function makeAvoid(text) {
   };
 }
 
-export function redact(text, detectors, vault) {
+// Non-overlapping, sorted spans with stand-ins assigned left-to-right
+// (so numbering follows reading order).
+export function findRedactions(text, detectors, vault) {
   const spans = [];
   for (const detector of detectors) {
     for (const span of detector.find(text)) {
       if (span.end > span.start) spans.push({ ...span, detector });
     }
   }
-  if (spans.length === 0) return text;
+  if (spans.length === 0) return [];
 
   const avoid = makeAvoid(text);
+  return resolveOverlaps(spans).map(({ start, end, detector }) => ({
+    start,
+    end,
+    standIn: vault.standInFor(text.slice(start, end), detector.category, detector.style, avoid),
+  }));
+}
+
+export function redact(text, detectors, vault) {
+  const spans = findRedactions(text, detectors, vault);
+  if (spans.length === 0) return text;
   const parts = [];
   let cursor = 0;
-  // Left-to-right so stand-in numbering follows reading order.
-  for (const { start, end, detector } of resolveOverlaps(spans)) {
-    parts.push(text.slice(cursor, start));
-    parts.push(vault.standInFor(text.slice(start, end), detector.category, detector.style, avoid));
+  for (const { start, end, standIn } of spans) {
+    parts.push(text.slice(cursor, start), standIn);
     cursor = end;
   }
   parts.push(text.slice(cursor));
