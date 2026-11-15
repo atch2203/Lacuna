@@ -63,3 +63,20 @@ test("case variants restore to the spelling that was used", () => {
   const out = redact(input, dets(), v);
   assert.equal(makeRestorer(v.entries())(out), input);
 });
+
+// Bug: first names didn't follow the full name's placeholder.
+test("after editing the full name's placeholder, parts follow it", () => {
+  const v = new Vault();
+  redact("Jane Doe / Jane", dets(), v);
+  v.setStandIn("Jane Doe", "Willie Mays");
+  assert.equal(redact("Jane Doe / Jane / Doe", dets(), v), "Willie Mays / Willie / Mays");
+});
+
+test("a part that got its own fake earlier is re-aligned with the full name", () => {
+  const v = new Vault();
+  const own = v.standInFor("Jane", "PERSON");
+  const out = redact("Jane Doe / Jane", dets(), v);
+  const [full, part] = out.split(" / ");
+  assert.equal(part, full.split(" ")[0]);
+  assert.equal(makeRestorer(v.entries())(own), "Jane", "the earlier fake still restores");
+});

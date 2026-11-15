@@ -62,3 +62,25 @@ test("manual entries survive JSON round-trip; detectors work from JSON", () => {
   const v2 = new Vault(json);
   assert.equal(redact("x hunter2", [...manualDetectors(json)], v2), `x ${fake}`);
 });
+
+// Bug: a name added by hand was a SECRET, and its first name wasn't detected.
+test("Auto classifies name-like values as PERSON", () => {
+  assert.equal(classifyValue("Barry Bonds"), "PERSON");
+  assert.equal(classifyValue("Mary Ann Smith"), "PERSON");
+  assert.equal(classifyValue("barry bonds"), "SECRET", "lowercase isn't assumed to be a name");
+  assert.equal(classifyValue("Project Falcon"), "PERSON", "heuristic: capitalised words read as a name; user can pick Org/Other");
+});
+
+test("a person added by hand behaves like a dictionary person (parts, any case)", () => {
+  const v = new Vault();
+  const fake = v.addManual("Barry Bonds");
+  const [first, last] = fake.split(" ");
+  const out = redact("Barry Bonds / barry / Bonds", detectorsFor(v), v);
+  assert.equal(out, `${fake} / ${first.toLowerCase()} / ${last}`);
+});
+
+test("ORG added by hand is matched case-insensitively", () => {
+  const v = new Vault();
+  const fake = v.addManual("Acme Corp", "ORG");
+  assert.equal(redact("at acme corp", detectorsFor(v), v), `at ${fake.toLowerCase()}`);
+});

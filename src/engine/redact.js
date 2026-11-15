@@ -69,9 +69,13 @@ function dictionaryStandIn(original, detector, vault, avoid) {
   if (detector.fullTerm === undefined && original === canonical) return base;
   const word = detector.fullTerm === undefined ? base : base.split(" ")[detector.partIndex];
   if (!word) return vault.standInFor(original, detector.category, detector.style, avoid);
-  const standIn = withCaseOf(word, original);
-  vault.link(original, standIn);
-  return vault.byOriginal[original] ?? standIn;
+  // Always (re)derive from the full name's CURRENT placeholder, so a part that
+  // got its own fake earlier, or a placeholder edited later, is re-aligned
+  // (setStandIn keeps the previous placeholder as an alias for old chats).
+  const desired = withCaseOf(word, original);
+  if (vault.byOriginal[original] === undefined) vault.link(original, desired);
+  else if (vault.byOriginal[original] !== desired) vault.setStandIn(original, desired);
+  return vault.byOriginal[original] ?? desired;
 }
 
 // Like findSensitive, plus stand-ins assigned left-to-right (so numbering
