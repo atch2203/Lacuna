@@ -11,11 +11,16 @@ import { redactFile } from "../docs/router.js";
 import { redactText } from "../docs/text.js";
 import { redactDocx } from "../docs/docx.js";
 import { redactPdf } from "../docs/pdf.js";
-import { renderPage } from "./render.js";
+import { renderPage, measureText } from "./render.js";
 
 const SOURCE = "llm-redactor-docframe";
 const ALLOWED_ORIGINS = new Set(["https://claude.ai", "https://chatgpt.com", "https://gemini.google.com"]);
 const url = (p) => chrome.runtime.getURL(p);
+const parentOrigin = location.ancestorOrigins?.[0];
+
+function toParent(data) {
+  if (ALLOWED_ORIGINS.has(parentOrigin)) window.parent.postMessage({ source: SOURCE, ...data }, parentOrigin);
+}
 
 pdfjs.GlobalWorkerOptions.workerSrc = url("pdf.worker.min.mjs");
 const docOptions = {
@@ -25,8 +30,12 @@ const docOptions = {
   wasmUrl: url("wasm/"),
 };
 
+const trace = (step) => toParent({ type: "trace", step });
+
 async function redactSpans(texts) {
+  trace(`redact-spans request (${texts.length} texts)`);
   const res = await chrome.runtime.sendMessage({ type: "redact-spans", texts });
+  trace(`redact-spans response ${res?.error ? "error" : "ok"}`);
   if (!res || res.error) throw new Error(res?.error ?? "no response from service worker");
   return res.spans;
 }
@@ -34,25 +43,36 @@ async function redactSpans(texts) {
 const handlers = {
   text: redactText,
   docx: redactDocx,
-  pdf: (bytes, spans) => redactPdf(bytes, spans, { pdfjs, render: renderPage, docOptions }),
+  pdf: (bytes, spans) =>
+    redactPdf(bytes, spans, {
+      pdfjs,
+      docOptions,
+      measure: measureText,
+      render: async (page, viewport, paints) => {
+        trace(`render page ${page.pageNumber} (${paints.length} paints)`);
+        const jpeg = await renderPage(page, viewport, paints);
+        trace(`rendered page ${page.pageNumber}`);
+        return jpeg;
+      },
+    }),
 };
 
 window.addEventListener("message", async (event) => {
   const msg = event.data;
+  if (msg?.source === SOURCE) trace(`got ${msg.type} sourceIsParent=${event.source === window.parent} origin=${event.origin}`);
   if (event.source !== window.parent || !ALLOWED_ORIGINS.has(event.origin)) return;
   if (!msg || msg.source !== SOURCE || msg.type !== "redact") return;
   const reply = (data, transfer = []) =>
     window.parent.postMessage({ source: SOURCE, type: "result", id: msg.id, ...data }, event.origin, transfer);
   try {
+    trace(`redacting ${msg.name} (${msg.buffer?.byteLength} bytes)`);
     const out = await redactFile({ name: msg.name, type: msg.mime, bytes: new Uint8Array(msg.buffer) }, redactSpans, handlers);
     const buffer = out.bytes.buffer.slice(out.bytes.byteOffset, out.bytes.byteOffset + out.bytes.byteLength);
     reply({ status: out.status, count: out.count, buffer }, [buffer]);
   } catch (err) {
+    trace(`failed: ${err?.message ?? err}`);
     reply({ error: String(err?.message ?? err) });
   }
 });
 
-const parentOrigin = location.ancestorOrigins?.[0];
-if (ALLOWED_ORIGINS.has(parentOrigin)) {
-  window.parent.postMessage({ source: SOURCE, type: "ready" }, parentOrigin);
-}
+toParent({ type: "ready" });

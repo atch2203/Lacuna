@@ -47,14 +47,25 @@ function apply([a, b, c, d, e, f], x, y) {
   return [a * x + c * y + e, b * x + d * y + f];
 }
 
-// Canvas-space box for characters [from, to) of an item, assuming uniform
-// character width within the item.
-export function pieceBox(item, from, to, viewportTransform) {
-  const len = item.str.length || 1;
+// Canvas-space box for characters [from, to) of an item.
+// measure(str) → width in any unit; with it, offsets follow the real
+// (proportional) glyph widths, otherwise characters are assumed equal width.
+// padEm widens the box on both sides by padEm × text height, so glyph edges
+// of the original never peek out.
+export function pieceBox(item, from, to, viewportTransform, { measure, padEm = 0 } = {}) {
+  const str = item.str;
+  let f0 = from / (str.length || 1);
+  let f1 = to / (str.length || 1);
+  const total = measure ? measure(str) : 0;
+  if (total > 0) {
+    f0 = measure(str.slice(0, from)) / total;
+    f1 = measure(str.slice(0, to)) / total;
+  }
   const [, , , , tx, ty] = item.transform;
-  const x0 = tx + (item.width * from) / len;
-  const x1 = tx + (item.width * to) / len;
   const h = itemHeight(item);
+  const pad = padEm * h;
+  const x0 = tx + item.width * f0 - pad;
+  const x1 = tx + item.width * f1 + pad;
   const [ax, ay] = apply(viewportTransform, x0, ty);
   const [bx, by] = apply(viewportTransform, x1, ty + h);
   return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) };

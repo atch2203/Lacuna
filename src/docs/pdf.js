@@ -12,6 +12,7 @@ import { buildPageText, spanPieces, pieceBox, itemTexts } from "./pdf-layout.js"
 const MAX_PAGES = 100;
 const MAX_SCALE = 2;
 const MAX_SIDE_PX = 4096;
+const PAD_EM = 0.15;
 
 // Characters the font can't encode become "?" (hidden layer only).
 export function hiddenText(str, font) {
@@ -27,18 +28,19 @@ export function hiddenText(str, font) {
   return out;
 }
 
-function paintsFor(items, ranges, spans, viewportTransform) {
+function paintsFor(items, ranges, spans, viewportTransform, measure) {
   const paints = [];
   for (const span of spans) {
     spanPieces(ranges, span).forEach((piece, i) => {
-      const box = pieceBox(items[piece.item], piece.from, piece.to, viewportTransform);
+      const box = pieceBox(items[piece.item], piece.from, piece.to, viewportTransform, { measure, padEm: PAD_EM });
       paints.push({ ...box, standIn: i === 0 ? span.standIn : "", fontPx: box.h });
     });
   }
   return paints;
 }
 
-export async function redactPdf(bytes, redactSpans, { pdfjs, render, docOptions = {} }) {
+// measure(str) (optional): text width for proportional box offsets.
+export async function redactPdf(bytes, redactSpans, { pdfjs, render, measure, docOptions = {} }) {
   // pdf.js may transfer (detach) the buffer it's given; hand it a copy.
   const task = pdfjs.getDocument({ ...docOptions, data: bytes.slice(), verbosity: 0 });
   const src = await task.promise;
@@ -70,7 +72,7 @@ export async function redactPdf(bytes, redactSpans, { pdfjs, render, docOptions 
       const scale = Math.min(MAX_SCALE, MAX_SIDE_PX / Math.max(width, height));
       const viewport = page.getViewport({ scale });
 
-      const jpeg = await render(page, viewport, paintsFor(items, ranges, spans, viewport.transform));
+      const jpeg = await render(page, viewport, paintsFor(items, ranges, spans, viewport.transform, measure));
       const image = await out.embedJpg(jpeg);
       const outPage = out.addPage([width, height]);
       outPage.drawImage(image, { x: 0, y: 0, width, height });

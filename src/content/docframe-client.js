@@ -3,6 +3,8 @@
 
 const SOURCE = "llm-redactor-docframe";
 const TIMEOUT_MS = 60_000;
+const READY_AFTER_LOAD_MS = 5_000;
+const log = (...args) => console.debug("[llm-redactor docframe]", ...args);
 
 let framePromise = null;
 const pending = new Map();
@@ -14,11 +16,27 @@ function getFrame() {
     iframe.setAttribute("data-llm-redactor", "docframe");
     iframe.style.display = "none";
     const timer = setTimeout(() => reject(new Error("document frame did not load")), TIMEOUT_MS);
+    let ready = false;
+    iframe.addEventListener("load", () => {
+      log("iframe load event");
+      setTimeout(() => {
+        if (!ready) reject(new Error("document frame loaded but never became ready"));
+      }, READY_AFTER_LOAD_MS);
+    });
+    iframe.addEventListener("error", () => reject(new Error("document frame failed to load")));
 
     window.addEventListener("message", (event) => {
       const msg = event.data;
-      if (event.source !== iframe.contentWindow || !msg || msg.source !== SOURCE) return;
-      if (msg.type === "ready") {
+      if (!msg || msg.source !== SOURCE) return;
+      log("message", msg.type, "sourceMatches:", event.source === iframe.contentWindow, "origin:", event.origin);
+      if (event.source !== iframe.contentWindow) return;
+      if (msg.type === "trace") {
+        log("frame:", msg.step);
+      } else if (msg.type === "frame-error") {
+        log("frame error:", msg.error);
+        if (!ready) reject(new Error(`document frame error: ${msg.error}`));
+      } else if (msg.type === "ready") {
+        ready = true;
         clearTimeout(timer);
         resolve(iframe);
       } else if (msg.type === "result") {

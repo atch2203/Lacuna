@@ -24,6 +24,14 @@ function borderColor(ctx, { x, y, w, h }, width, height) {
   return samples.map(median);
 }
 
+// Width of str in a generic sans-serif face; used for proportional offsets
+// of sensitive spans within a text item (close to Helvetica/Arial metrics).
+const measureCtx = new OffscreenCanvas(1, 1).getContext("2d");
+measureCtx.font = "100px sans-serif";
+export function measureText(str) {
+  return measureCtx.measureText(str).width;
+}
+
 export async function renderPage(page, viewport, paints) {
   const width = Math.ceil(viewport.width);
   const height = Math.ceil(viewport.height);
@@ -31,13 +39,17 @@ export async function renderPage(page, viewport, paints) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
-  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+  // intent "print": the display intent paces rendering with
+  // requestAnimationFrame, which never fires in a display:none iframe (or a
+  // background tab), so the render promise would never resolve.
+  await page.render({ canvas, canvasContext: ctx, viewport, intent: "print" }).promise;
 
   for (const p of paints) {
     const [r, g, b] = borderColor(ctx, p, width, height);
     ctx.fillStyle = `rgb(${r},${g},${b})`;
-    // Pad slightly so glyph edges (antialiasing, descenders) are covered.
-    ctx.fillRect(p.x - 1, p.y - 1, p.w + 2, p.h + 3);
+    // Boxes run baseline→ascent; extend below the baseline for descenders
+    // (p, g, y) and by 1px all round for antialiasing.
+    ctx.fillRect(p.x - 1, p.y - 1, p.w + 2, p.h * 1.25 + 2);
     if (!p.standIn) continue;
 
     const luminance = 0.299 * r + 0.587 * g + 0.114 * b;

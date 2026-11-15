@@ -5,6 +5,8 @@ import { classifyFile } from "../docs/router.js";
 
 // processFile: (File) => Promise<{ status, file, count }>
 // notify: { working(name) => update(kind, message, timeoutMs), warn(message) }
+const log = (...args) => console.debug("[llm-redactor files]", ...args);
+
 export function startFileInterceptor({ processFile, isEnabled, notify }) {
   const ours = new WeakSet();
 
@@ -60,9 +62,12 @@ export function startFileInterceptor({ processFile, isEnabled, notify }) {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
     const files = [...(input.files ?? [])];
-    if (!shouldHold(event, files)) return;
+    const hold = shouldHold(event, files);
+    log("change", { ours: ours.has(event), trusted: event.isTrusted, files: files.map((f) => f.name), hold });
+    if (!hold) return;
     event.stopImmediatePropagation();
     redactAll(files).then((redacted) => {
+      log("re-dispatching change with", redacted.map((f) => `${f.name} (${f.size} bytes)`));
       input.files = toDataTransfer(redacted).files;
       dispatch(input, new Event("input", { bubbles: true }));
       dispatch(input, new Event("change", { bubbles: true }));

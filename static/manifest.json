@@ -44,6 +44,7 @@
     {
       "resources": [
         "docframe.html",
+        "docframe-boot.js",
         "docframe.js",
         "pdf.worker.min.mjs",
         "standard_fonts/*",

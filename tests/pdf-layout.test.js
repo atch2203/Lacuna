@@ -62,3 +62,17 @@ test("pieceBox falls back to transform scale when height is 0", () => {
   const it = { str: "ab", transform: [12, 0, 0, 12, 0, 0], width: 10, height: 0 };
   assert.equal(pieceBox(it, 0, 2, [1, 0, 0, 1, 0, 0]).h, 12);
 });
+
+test("pieceBox uses a measure function for proportional fonts", () => {
+  // "WWii": W is 3 units wide, i is 1 → total 8. Chars [2,4) start at 6/8 of width.
+  const measure = (s) => [...s].reduce((n, ch) => n + (ch === "W" ? 3 : 1), 0);
+  const it = { str: "WWii", transform: [10, 0, 0, 10, 100, 200], width: 80, height: 10 };
+  const box = pieceBox(it, 2, 4, [1, 0, 0, 1, 0, 0], { measure, padEm: 0 });
+  assert.deepEqual({ x: box.x, w: box.w }, { x: 160, w: 20 });
+});
+
+test("pieceBox pads horizontally by padEm × height", () => {
+  const it = { str: "abcd", transform: [10, 0, 0, 10, 100, 200], width: 40, height: 10 };
+  const box = pieceBox(it, 1, 3, [1, 0, 0, 1, 0, 0], { padEm: 0.2 });
+  assert.deepEqual({ x: box.x, w: box.w }, { x: 108, w: 24 });
+});
