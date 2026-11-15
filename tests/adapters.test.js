@@ -74,7 +74,7 @@ describe("chatgpt", () => {
   });
 });
 
-describe("gemini", () => {
+describe("gemini (StreamGenerate, legacy)", () => {
   const url = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?bl=x&_reqid=1&rt=c";
 
   test("matches StreamGenerate", () => {
@@ -90,12 +90,68 @@ describe("gemini", () => {
   });
 
   test("inject keeps a valid form body with nested JSON", () => {
-    const out = gemini.inject(fixture("gemini-streamgenerate.txt"), ["X \"quoted\" & more"]);
+    const out = gemini.inject(fixture("gemini-streamgenerate.txt"), ['X "quoted" & more']);
     const params = new URLSearchParams(out);
     assert.equal(params.get("at"), "AJvLN6Mx:1700000000000");
     const inner = JSON.parse(JSON.parse(params.get("f.req"))[1]);
     assert.equal(inner[0][0], 'X "quoted" & more');
     assert.deepEqual(inner[1], ["en"]);
     assert.deepEqual(gemini.extract(out), ['X "quoted" & more']);
+  });
+});
+
+// Captured live 2026-11-14: prompts go over a WebChannel to
+// geminiweb-pa.clients6.google.com/v1/processSession as form fields
+// count/ofs/reqN___data__, where each reqN___data__ is base64 protobuf and the
+// prompt sits at field path 2 → 9 → 1.
+describe("gemini (processSession WebChannel)", () => {
+  const url = "https://geminiweb-pa.clients6.google.com/v1/processSession?VER=8&gsessionid=x&SID=y&RID=1&AID=0&zx=z&t=1";
+  const PROMPT = "zebracanary AKIAIOSFODNN7EXAMPLE";
+  const b64 = (bytes) => Buffer.from(bytes).toString("base64");
+  const form = (pairs) => new URLSearchParams(pairs).toString();
+  const decodeReq = (body, key = "req0___data__") => [...Buffer.from(new URLSearchParams(body).get(key), "base64")];
+
+  test("matches processSession POST", () => {
+    assert.equal(gemini.matches(u(url), "POST"), true);
+  });
+
+  test("ignores processSession GET (response stream) and other hosts", () => {
+    assert.equal(gemini.matches(u(url), "GET"), false);
+    assert.equal(gemini.matches(u("https://example.com/v1/processSession"), "POST"), false);
+  });
+
+  test("extracts the prompt from the captured request", () => {
+    assert.deepEqual(gemini.extract(fixture("gemini-processsession.txt")), [PROMPT]);
+  });
+
+  test("non-prompt channel messages yield nothing", () => {
+    assert.deepEqual(gemini.extract("count=0"), []);
+    assert.deepEqual(gemini.extract(form([["count", "1"], ["ofs", "2"], ["req0___data__", "IgIIAQ=="]])), []);
+  });
+
+  test("inject preserves sibling fields and form params", () => {
+    const out = gemini.inject(fixture("gemini-processsession.txt"), ["[API_KEY_1]"]);
+    const params = new URLSearchParams(out);
+    assert.equal(params.get("count"), "1");
+    assert.equal(params.get("ofs"), "1");
+    const s = "[API_KEY_1]";
+    // 12 len | 08 01 | 4a len | 0a len | s
+    assert.deepEqual(decodeReq(out), [0x12, s.length + 6, 0x08, 0x01, 0x4a, s.length + 2, 0x0a, s.length, ...Buffer.from(s)]);
+    assert.deepEqual(gemini.extract(out), [s]);
+  });
+
+  test("inject rewrites multi-byte lengths for long prompts", () => {
+    const long = "x".repeat(300) + " é";
+    const out = gemini.inject(fixture("gemini-processsession.txt"), [long]);
+    assert.deepEqual(gemini.extract(out), [long]);
+  });
+
+  test("finds the prompt in a later reqN when count > 1", () => {
+    const promptMsg = decodeReq(fixture("gemini-processsession.txt"));
+    const body = form([["count", "2"], ["ofs", "5"], ["req0___data__", "IgIIAQ=="], ["req1___data__", b64(promptMsg)]]);
+    assert.deepEqual(gemini.extract(body), [PROMPT]);
+    const out = gemini.inject(body, ["Y"]);
+    assert.equal(new URLSearchParams(out).get("req0___data__"), "IgIIAQ==");
+    assert.deepEqual(gemini.extract(out), ["Y"]);
   });
 });
