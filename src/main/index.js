@@ -4,6 +4,7 @@ import { installXhrHook } from "./xhr-hook.js";
 import { ADAPTERS } from "./adapters/index.js";
 import { requestRedaction, reportFailure } from "../shared/bridge.js";
 import { installFileRestorer } from "./file-response.js";
+import { createPickerRedactor, installFilePickerHook } from "./file-picker-hook.js";
 
 const hookOptions = {
   win: window,
@@ -39,4 +40,8 @@ installFileRestorer({
       window.addEventListener("message", onReply);
       window.postMessage({ source: FILE, type: "restore", id, name, mime: MIME[kind], buffer }, "*", [buffer]);
     }),
+});
+
+installFilePickerHook({
+  redact: createPickerRedactor(window),
 });

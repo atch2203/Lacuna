@@ -52,6 +52,12 @@ const updateGuard = serialize(async (event) => {
   await chrome.storage.session.set({ shares: after.shares, manualGuard: after.manual, guard });
   await chrome.action.setBadgeText({ text: guard.active ? "SHARE" : "" });
   if (guard.active) await chrome.action.setBadgeBackgroundColor({ color: "#b42318" });
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(
+    tabs
+      .filter(({ id }) => id !== undefined)
+      .map(({ id }) => chrome.tabs.sendMessage(id, { type: "guard-state", guard }).catch(() => {})),
+  );
   return guard;
 });
 

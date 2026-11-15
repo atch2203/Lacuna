@@ -6,10 +6,10 @@ import { wrapClipboard } from "../demo/clipboard.js";
 import { installCanvasGuard } from "./canvas-guard.js";
 import { PATTERN_DETECTORS } from "../engine/patterns.js";
 
-if (navigator.mediaDevices?.getDisplayMedia && typeof MediaStreamTrack !== "undefined") {
+if (navigator.mediaDevices?.getDisplayMedia) {
   installShareDetector({
     mediaDevices: navigator.mediaDevices,
-    trackProto: MediaStreamTrack.prototype,
+    trackProto: globalThis.MediaStreamTrack?.prototype,
     report: (r) => window.postMessage({ source: "llm-redactor-share", ...r }, "*"),
   });
 }
@@ -55,7 +55,11 @@ const CANVAS = "llm-redactor-canvas";
 if (location.hostname === "docs.google.com" && typeof CanvasRenderingContext2D !== "undefined") {
   let active = false;
   const standIns = new Map();
-  const repaint = () => window.dispatchEvent(new Event("resize"));
+  const repaint = () => {
+    const notify = () => window.dispatchEvent(new Event("resize"));
+    notify();
+    for (const delay of [16, 64, 160, 320]) setTimeout(notify, delay);
+  };
   const canvasGuard = installCanvasGuard({
     proto: CanvasRenderingContext2D.prototype,
     detectors: PATTERN_DETECTORS,

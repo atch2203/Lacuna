@@ -14,11 +14,13 @@ export function installShareDetector({ mediaDevices, trackProto, report, newId =
     report({ type: "share-ended", shareId: share.shareId });
   }
 
-  const originalStop = trackProto.stop;
-  trackProto.stop = function (...args) {
-    end(this);
-    return originalStop.apply(this, args);
-  };
+  if (trackProto?.stop) {
+    const originalStop = trackProto.stop;
+    trackProto.stop = function (...args) {
+      end(this);
+      return originalStop.apply(this, args);
+    };
+  }
 
   // The share is reported as soon as the picker opens ("pending"), so the
   // guard is already on when capture starts; cancelling ends it.
@@ -37,7 +39,7 @@ export function installShareDetector({ mediaDevices, trackProto, report, newId =
     const video = stream.getTracks().filter((t) => t.kind === "video");
     for (const track of video) {
       shareOf.set(track, share);
-      track.addEventListener("ended", () => end(track));
+      track.addEventListener?.("ended", () => end(track));
     }
     const surface = video[0]?.getSettings?.().displaySurface ?? "unknown";
     report({ type: "share-started", shareId: share.shareId, surface });

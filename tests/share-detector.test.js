@@ -75,6 +75,21 @@ test("audio tracks are ignored", async () => {
   assert.equal(reports.filter((r) => r.type === "share-ended").length, 0);
 });
 
+test("share detection works without a MediaStreamTrack prototype", async () => {
+  const reports = [];
+  const mediaDevices = {
+    getDisplayMedia: async () => ({
+      getTracks: () => [{ kind: "video", getSettings: () => ({ displaySurface: "browser" }) }],
+    }),
+  };
+  installShareDetector({ mediaDevices, report: (r) => reports.push(r), newId: () => "s2" });
+  await mediaDevices.getDisplayMedia();
+  assert.deepEqual(reports, [
+    { type: "share-started", shareId: "s2", surface: "pending" },
+    { type: "share-started", shareId: "s2", surface: "browser" },
+  ]);
+});
+
 test("stop on an untracked track (e.g. camera) reports nothing", async () => {
   const { reports, tracks } = setup();
   const Camera = Object.getPrototypeOf(tracks[0]).constructor;

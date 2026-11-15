@@ -99,7 +99,23 @@ startFileInterceptor({
 const FILE = "llm-redactor-file";
 window.addEventListener("message", async (event) => {
   const msg = event.data;
-  if (event.source !== window || msg?.source !== FILE || msg.type !== "restore") return;
+  if (event.source !== window || msg?.source !== FILE) return;
+  if (msg.type === "picker-redact") {
+    try {
+      const file = new File([msg.buffer], msg.name, { type: msg.mime, lastModified: msg.lastModified });
+      const out = await redactInFrame(file);
+      if (out.status !== "redacted") {
+        window.postMessage({ source: FILE, type: "picker-result", id: msg.id, status: out.status }, "*");
+        return;
+      }
+      const buffer = await out.file.arrayBuffer();
+      window.postMessage({ source: FILE, type: "picker-result", id: msg.id, status: "redacted", buffer }, "*", [buffer]);
+    } catch (err) {
+      window.postMessage({ source: FILE, type: "picker-result", id: msg.id, status: "error", error: String(err?.message ?? err) }, "*");
+    }
+    return;
+  }
+  if (msg.type !== "restore") return;
   let bytes = null;
   if (enabled && !guardActive) {
     try {

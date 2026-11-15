@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "LLM Redactor",
+  "name": "Lacuna",
   "version": "0.1.0",
   "description": "Redacts sensitive data from prompts sent to web LLM chats and restores it on screen.",
   "permissions": [
@@ -8,7 +8,19 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "LLM Redactor"
+    "default_title": "Lacuna",
+    "default_icon": {
+      "16": "lacuna_logo.png",
+      "32": "lacuna_logo.png",
+      "48": "lacuna_logo.png",
+      "128": "lacuna_logo.png"
+    }
+  },
+  "icons": {
+    "16": "lacuna_logo.png",
+    "32": "lacuna_logo.png",
+    "48": "lacuna_logo.png",
+    "128": "lacuna_logo.png"
   },
   "content_scripts": [
     {

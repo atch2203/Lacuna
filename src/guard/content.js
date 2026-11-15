@@ -38,6 +38,13 @@ function noteHidden(original) {
 
 const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => {});
 
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type !== "guard-state") return;
+  active = Boolean(msg.guard?.active);
+  reason = msg.guard?.reason ?? null;
+  apply();
+});
+
 window.addEventListener("message", (event) => {
   const msg = event.data;
   if (event.source !== window || msg?.source !== SOURCE) return;
