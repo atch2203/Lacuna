@@ -6,13 +6,50 @@ import { readFileSync } from "node:fs";
 import claude from "../src/main/adapters/claude.js";
 import chatgpt from "../src/main/adapters/chatgpt.js";
 import gemini from "../src/main/adapters/gemini.js";
+import claudeRpc from "../src/main/adapters/claude-rpc.js";
+import { getString } from "../src/main/adapters/protobuf.js";
 import { ADAPTERS } from "../src/main/adapters/index.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8").trim();
 const u = (s) => new URL(s);
 
-test("registry has all three adapters", () => {
-  assert.deepEqual(ADAPTERS.map((a) => a.id).sort(), ["chatgpt", "claude", "gemini"]);
+test("registry has all adapters", () => {
+  assert.deepEqual(ADAPTERS.map((a) => a.id).sort(), ["chatgpt", "claude", "claude-rpc", "gemini"]);
+});
+
+// Shape mirrors the live request captured 2026-11-14 (ids replaced):
+// POST /claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/PerformAction
+// Content-Type: application/proto, body = protobuf, prompt at field path 2 → 3.
+describe("claude-rpc", () => {
+  const url = "https://claude.ai/claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/PerformAction";
+  const bin = () => new Uint8Array(readFileSync(new URL("./fixtures/claude-performaction.bin", import.meta.url)));
+
+  test("is a bytes adapter", () => {
+    assert.equal(claudeRpc.bodyType, "bytes");
+  });
+
+  test("matches PerformAction POST only", () => {
+    assert.equal(claudeRpc.matches(u(url), "POST"), true);
+    assert.equal(claudeRpc.matches(u(url), "GET"), false);
+    assert.equal(claudeRpc.matches(u("https://claude.ai/claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/ReportViewing"), "POST"), false);
+  });
+
+  test("extracts the prompt", () => {
+    assert.deepEqual(claudeRpc.extract(bin()), ["zebracanary again: AKIAIOSFODNN7EXAMPLE"]);
+  });
+
+  test("actions without a prompt yield nothing", () => {
+    assert.deepEqual(claudeRpc.extract(Uint8Array.from([0x0a, 0x02, 0x10, 0x03])), []);
+    assert.deepEqual(claudeRpc.extract(new Uint8Array(0)), []);
+  });
+
+  test("inject round-trips and returns bytes", () => {
+    const out = claudeRpc.inject(bin(), ["[API_KEY_1]"]);
+    assert.ok(out instanceof Uint8Array);
+    assert.deepEqual(claudeRpc.extract(out), ["[API_KEY_1]"]);
+    assert.equal(getString(out, [2, 12]), "America/New_York");
+    assert.equal(getString(out, [1, 1, 1]), "sess_0000000000000000");
+  });
 });
 
 describe("claude", () => {
@@ -65,6 +102,27 @@ describe("chatgpt", () => {
 
   test("skips non-string parts", () => {
     assert.deepEqual(chatgpt.extract(fixture("chatgpt-multimodal.json")), ["what is in this image, jane@corp.io?"]);
+  });
+
+  test("matches logged-out conversation/updates", () => {
+    assert.equal(chatgpt.matches(u("https://chatgpt.com/unauth-mweb/conversation/updates"), "POST"), true);
+    assert.equal(chatgpt.matches(u("https://chatgpt.com/unauth-mweb/conversation/prepare"), "POST"), false);
+  });
+
+  // Shape mirrors the live logged-out request captured 2026-11-14 (tokens replaced).
+  test("extracts the prompt form field", () => {
+    assert.deepEqual(chatgpt.extract(fixture("chatgpt-unauth-updates.txt")), ["zebracanary again AKIAIOSFODNN7EXAMPLE"]);
+  });
+
+  test("form inject only changes the prompt field", () => {
+    const body = fixture("chatgpt-unauth-updates.txt");
+    const out = chatgpt.inject(body, ["X"]);
+    const before = new URLSearchParams(body);
+    const after = new URLSearchParams(out);
+    assert.equal(after.get("prompt"), "X");
+    before.delete("prompt");
+    after.delete("prompt");
+    assert.equal(after.toString(), before.toString());
   });
 
   test("inject round-trips and keeps non-string parts", () => {

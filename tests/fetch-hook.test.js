@@ -106,6 +106,39 @@ test("URLSearchParams body is read as a string and redacted", async () => {
   assert.equal(new URLSearchParams(calls[0].init.body).get("q"), "my [API_KEY_1]");
 });
 
+const bytesAdapter = {
+  id: "bytes",
+  bodyType: "bytes",
+  matches: (url) => url.pathname === "/bin",
+  extract: (b) => [new TextDecoder().decode(b)],
+  inject: (_b, [t]) => new TextEncoder().encode(t),
+};
+
+test("bytes adapter: Uint8Array body is redacted and sent as bytes", async () => {
+  const { win, calls } = setup({ adapters: [bytesAdapter] });
+  await win.fetch("https://x.test/bin", { method: "POST", body: new TextEncoder().encode("my SECRET") });
+  assert.ok(calls[0].init.body instanceof Uint8Array);
+  assert.equal(new TextDecoder().decode(calls[0].init.body), "my [API_KEY_1]");
+});
+
+test("bytes adapter: ArrayBuffer body is read", async () => {
+  const { win, calls } = setup({ adapters: [bytesAdapter] });
+  await win.fetch("https://x.test/bin", { method: "POST", body: new TextEncoder().encode("my SECRET").buffer });
+  assert.equal(new TextDecoder().decode(calls[0].init.body), "my [API_KEY_1]");
+});
+
+test("bytes adapter: Request body is read as bytes", async () => {
+  const { win, calls } = setup({ adapters: [bytesAdapter] });
+  await win.fetch(new Request("https://x.test/bin", { method: "POST", body: new TextEncoder().encode("my SECRET") }));
+  assert.equal(await calls[0].input.text(), "my [API_KEY_1]");
+});
+
+test("bytes adapter: string body is unreadable → onError", async () => {
+  const { win, errors } = setup({ adapters: [bytesAdapter] });
+  await win.fetch("https://x.test/bin", { method: "POST", body: "my SECRET" });
+  assert.equal(errors.length, 1);
+});
+
 // I5 — XHR
 import { installXhrHook } from "../src/main/xhr-hook.js";
 

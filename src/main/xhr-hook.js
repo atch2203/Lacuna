@@ -29,13 +29,13 @@ export function installXhrHook({ win, adapters, redactTexts, onError }) {
       return originalSend.call(this, body);
     }
 
-    const readable = readableBody(body);
+    const readable = readableBody(body, adapter.bodyType);
     if (!readable) {
       onError(`${adapter.id}: unreadable request body (${Object.prototype.toString.call(body)})`);
       return originalSend.call(this, body);
     }
 
-    redactBody(adapter, readable.text, redactTexts)
+    redactBody(adapter, readable.value, redactTexts)
       .then((redacted) => originalSend.call(this, redacted === null ? body : readable.wrap(redacted)))
       .catch((err) => {
         onError(`${adapter.id}: ${err?.message ?? err}`);
