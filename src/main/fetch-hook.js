@@ -1,27 +1,15 @@
 // Wraps window.fetch so prompt-bearing requests are redacted before they
-// leave the page. Fails open: any error forwards the original request.
+// leave the page. Fails open: any error forwards the original request and
+// calls onError (which shows the warning badge).
 
 // Adapter = { id, matches(url: URL, method), extract(body) → string[], inject(body, texts) → body }
+import { findAdapter, readableBody, redactBody } from "./pipeline.js";
 
-async function describe(input, init) {
+function target(input, init, baseHref) {
   const isRequest = typeof Request !== "undefined" && input instanceof Request;
-  const url = new URL(isRequest ? input.url : String(input), globalThis.location?.href);
+  const url = new URL(isRequest ? input.url : String(input), baseHref);
   const method = (init?.method ?? (isRequest ? input.method : "GET")).toUpperCase();
-  let body;
-  let bodyFrom = null;
-  if (init?.body !== undefined) {
-    body = init.body;
-    bodyFrom = "init";
-  } else if (isRequest && method !== "GET" && method !== "HEAD") {
-    body = await input.clone().text();
-    bodyFrom = "request";
-  }
-  return { url, method, body, bodyFrom };
-}
-
-function rebuild(input, init, bodyFrom, newBody) {
-  if (bodyFrom === "init") return [input, { ...init, body: newBody }];
-  return [new Request(input, { body: newBody }), init];
+  return { url, method, isRequest };
 }
 
 export function installFetchHook({ win, adapters, redactTexts, onError }) {
@@ -29,22 +17,29 @@ export function installFetchHook({ win, adapters, redactTexts, onError }) {
 
   win.fetch = async function (input, init) {
     let adapter;
-    let req;
+    let isRequest;
     try {
-      req = await describe(input, init);
-      adapter = adapters.find((a) => a.matches(req.url, req.method));
+      const t = target(input, init, win.location?.href ?? globalThis.location?.href);
+      isRequest = t.isRequest;
+      adapter = findAdapter(adapters, t.url, t.method);
     } catch {
       adapter = undefined;
     }
-    if (!adapter || typeof req.body !== "string") return originalFetch(input, init);
+    if (!adapter) return originalFetch(input, init);
 
     try {
-      const texts = adapter.extract(req.body);
-      if (texts.length === 0) return originalFetch(input, init);
-      const redacted = await redactTexts(texts);
-      if (redacted.every((t, i) => t === texts[i])) return originalFetch(input, init);
-      const newBody = adapter.inject(req.body, redacted);
-      return originalFetch(...rebuild(input, init, req.bodyFrom, newBody));
+      // Read the body only once we know this is a prompt request.
+      const fromInit = init?.body !== undefined;
+      const raw = fromInit ? init.body : isRequest ? await input.clone().text() : undefined;
+      if (raw === undefined) return originalFetch(input, init);
+      const body = readableBody(raw);
+      if (!body) throw new Error(`unreadable request body (${Object.prototype.toString.call(raw)})`);
+
+      const redacted = await redactBody(adapter, body.text, redactTexts);
+      if (redacted === null) return originalFetch(input, init);
+      const newBody = body.wrap(redacted);
+      if (fromInit) return originalFetch(input, { ...init, body: newBody });
+      return originalFetch(new Request(input, { body: newBody }), init);
     } catch (err) {
       onError(`${adapter.id}: ${err?.message ?? err}`);
       return originalFetch(input, init);

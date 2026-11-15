@@ -1,5 +1,6 @@
 // Popup: settings, dictionary, vault viewer. Reads/writes chrome.storage.local
 // directly; content scripts pick changes up via chrome.storage.onChanged.
+import { Vault } from "../engine/vault.js";
 
 const $ = (id) => document.getElementById(id);
 let showOriginals = false;
@@ -79,7 +80,9 @@ $("toggle-originals").addEventListener("click", () => {
 
 $("clear-vault").addEventListener("click", async () => {
   if (!confirm("Clear the vault? Stand-ins in existing chats will no longer be restored to their originals.")) return;
-  await chrome.storage.local.remove("vault");
+  // Keep counters so already-sent stand-ins are never reused for new data.
+  const { vault } = await load();
+  await chrome.storage.local.set({ vault: new Vault(vault).cleared().toJSON() });
 });
 
 chrome.storage.onChanged.addListener((_, area) => {

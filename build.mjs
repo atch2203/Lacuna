@@ -8,6 +8,7 @@ const options = {
     main: "src/main/index.js",
     content: "src/content/index.js",
     popup: "src/popup/popup.js",
+    background: "src/background/index.js",
   },
   outdir: "dist",
   bundle: true,

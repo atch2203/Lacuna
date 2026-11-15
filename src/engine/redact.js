@@ -1,13 +1,28 @@
 // Redaction engine: run detectors, resolve overlaps, substitute. Pure.
+// All steps are O(n log n) in the number of spans so large pastes stay fast.
 
-// Longest span wins, then earliest. Returns non-overlapping spans sorted by start.
+// Longest span wins among overlapping ones, then earliest.
+// Returns non-overlapping spans sorted by start.
 export function resolveOverlaps(spans) {
-  const ranked = [...spans].sort((a, b) => b.end - b.start - (a.end - a.start) || a.start - b.start);
+  const sorted = [...spans].sort((a, b) => a.start - b.start || b.end - a.end);
   const kept = [];
-  for (const s of ranked) {
-    if (kept.every((k) => s.end <= k.start || s.start >= k.end)) kept.push(s);
+  for (const s of sorted) {
+    const last = kept[kept.length - 1];
+    if (!last || s.start >= last.end) kept.push(s);
+    else if (s.end - s.start > last.end - last.start) kept[kept.length - 1] = s;
   }
-  return kept.sort((a, b) => a.start - b.start);
+  return kept;
+}
+
+// Cheap "does this fake already appear in the text?" check: a word-set
+// lookup on the fake's first word, falling back to a full scan only on a hit.
+function makeAvoid(text) {
+  let words = null;
+  return (candidate) => {
+    words ??= new Set(text.split(/[^\w.@-]+/));
+    const first = candidate.split(" ")[0];
+    return words.has(first) && text.includes(candidate);
+  };
 }
 
 export function redact(text, detectors, vault) {
@@ -19,15 +34,15 @@ export function redact(text, detectors, vault) {
   }
   if (spans.length === 0) return text;
 
-  // Assign stand-ins left-to-right (so numbering follows reading order),
-  // then splice right-to-left (so earlier offsets stay valid).
-  const resolved = resolveOverlaps(spans).map((s) => ({
-    ...s,
-    standIn: vault.standInFor(text.slice(s.start, s.end), s.detector.category, s.detector.style, text),
-  }));
-  let out = text;
-  for (const { start, end, standIn } of resolved.reverse()) {
-    out = out.slice(0, start) + standIn + out.slice(end);
+  const avoid = makeAvoid(text);
+  const parts = [];
+  let cursor = 0;
+  // Left-to-right so stand-in numbering follows reading order.
+  for (const { start, end, detector } of resolveOverlaps(spans)) {
+    parts.push(text.slice(cursor, start));
+    parts.push(vault.standInFor(text.slice(start, end), detector.category, detector.style, avoid));
+    cursor = end;
   }
-  return out;
+  parts.push(text.slice(cursor));
+  return parts.join("");
 }

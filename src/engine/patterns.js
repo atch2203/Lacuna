@@ -21,6 +21,10 @@ export function luhnValid(digits) {
 
 function isIPv6(s) {
   if ((s.match(/:/g) ?? []).length < 2) return false;
+  // Reject "::", "1::2", "::-1"-style slices and type signatures: need at
+  // least two hex groups and three hex digits in total.
+  const groups = s.split(":").filter(Boolean);
+  if (groups.length < 2 || groups.join("").length < 3) return false;
   try {
     new URL(`http://[${s}]/`);
     return true;
@@ -49,6 +53,57 @@ function regexDetector(id, style, source, { flags = "", group = 0, validate } = 
   };
 }
 
+// Known card prefixes (Visa, Mastercard, Amex, Discover, JCB); separated
+// numbers must use 4-4-4-4(-3) or Amex 4-6-5 grouping.
+const CARD_PREFIX = /^(?:4|5[1-5]|2[2-7]|3[47]|35|6)/;
+function isCard(s) {
+  const digits = s.replace(/[ -]/g, "");
+  if (digits.length < 13 || digits.length > 19) return false;
+  if (!CARD_PREFIX.test(digits) || /^(\d)\1+$/.test(digits)) return false;
+  if (digits !== s) {
+    const groups = s.split(/[ -]/).map((g) => g.length).join(",");
+    if (!/^4,4,4,4(,[1-4])?$|^4,6,5$/.test(groups)) return false;
+  }
+  return luhnValid(digits);
+}
+
+// Values that follow "token:"/"password =" in code rather than being secrets.
+const NOT_SECRET = new Set([
+  "string", "number", "boolean", "str", "int", "bool", "bytes", "any", "none",
+  "null", "nil", "true", "false", "undefined", "await", "new", "function", "async",
+  "optional", "self", "this", "required", "lambda",
+]);
+const IDENT_PATH = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/;
+
+function secretDetector() {
+  const re = new RegExp(
+    String.raw`\b[A-Za-z_]*(?:password|passwd|pwd|secret|token|api_?key)["']?\s*[:=]\s*` +
+      String.raw`(?:"([^"\s]+)"|'([^'\s]+)'|([^\s"'&,;()\[\]{}<>]+))`,
+    "gdi",
+  );
+  return {
+    id: "secret",
+    category: "SECRET",
+    style: "token",
+    find(text) {
+      const spans = [];
+      for (const m of text.matchAll(re)) {
+        const g = m[1] !== undefined ? 1 : m[2] !== undefined ? 2 : 3;
+        const [start, end] = m.indices[g];
+        if (g === 3) {
+          // Unquoted: skip code (identifiers, dotted paths, calls, type names).
+          const v = m[3];
+          if (NOT_SECRET.has(v.toLowerCase()) || text[end] === "(") continue;
+          if (IDENT_PATH.test(v) && !/\d/.test(v)) continue;
+          if (/^(os|process|self|this|env|config|settings)\./i.test(v)) continue;
+        }
+        spans.push({ start, end });
+      }
+      return spans;
+    },
+  };
+}
+
 const OCTET = String.raw`(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)`;
 
 const URL_TOKEN_PARAMS = [
@@ -65,7 +120,13 @@ export const PATTERN_DETECTORS = [
   regexDetector(
     "phone",
     "fake",
-    String.raw`(?<![\w+])(?:\+\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]\d{4}(?!\d)`,
+    // Separators limited to space/dot/dash and consistent within the number;
+    // bare space-separated 3-3-4 only with a +country prefix, so TSV/number
+    // lists aren't mistaken for phones.
+    String.raw`(?<![\w+.-])(?<!\d[ .,\t])(?:` +
+      String.raw`(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\) ?\d{3}[-.]\d{4}|\d{3}([-.])\d{3}\1\d{4})` +
+      String.raw`|\+\d{1,3} \d{3} \d{3} \d{4}` +
+      String.raw`)(?![\w-])`,
   ),
   regexDetector(
     "ssn",
@@ -73,7 +134,7 @@ export const PATTERN_DETECTORS = [
     String.raw`(?<![\d-])(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}(?![\d-])`,
   ),
   regexDetector("card", "token", String.raw`(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])`, {
-    validate: (s) => luhnValid(s.replace(/[ -]/g, "")),
+    validate: isCard,
   }),
   {
     id: "ip",
@@ -106,12 +167,7 @@ export const PATTERN_DETECTORS = [
     "token",
     String.raw`-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z]+ )*PRIVATE KEY-----`,
   ),
-  regexDetector(
-    "secret",
-    "token",
-    String.raw`\b[A-Za-z_]*(?:password|passwd|pwd|secret|token|api_?key)\s*[:=]\s*["']?([^\s"'&,;]+)`,
-    { flags: "i", group: 1 },
-  ),
+  secretDetector(),
   regexDetector(
     "url_token",
     "token",

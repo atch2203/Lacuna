@@ -80,13 +80,88 @@ test("adapter.extract throws → original request sent, onError called", async (
   assert.equal(errors.length, 1);
 });
 
-test("non-string body passes through", async () => {
+test("matched adapter + unreadable body → passes through with onError (visible fail-open)", async () => {
   const { win, calls, errors } = setup();
   const init = { method: "POST", body: new Uint8Array([1, 2]) };
   await win.fetch(URL_SEND, init);
   assert.equal(calls[0].init, init);
+  assert.equal(errors.length, 1);
+});
+
+test("unmatched request with non-string body → no error", async () => {
+  const { win, errors } = setup();
+  await win.fetch("https://x.test/upload", { method: "POST", body: new Uint8Array([1]) });
   assert.equal(errors.length, 0);
 });
+
+test("URLSearchParams body is read as a string and redacted", async () => {
+  const formAdapter = {
+    id: "form",
+    matches: (url) => url.pathname === "/form",
+    extract: (b) => [new URLSearchParams(b).get("q")],
+    inject: (b, [q]) => { const p = new URLSearchParams(b); p.set("q", q); return p.toString(); },
+  };
+  const { win, calls } = setup({ adapters: [formAdapter] });
+  await win.fetch("https://x.test/form", { method: "POST", body: new URLSearchParams({ q: "my SECRET" }) });
+  assert.equal(new URLSearchParams(calls[0].init.body).get("q"), "my [API_KEY_1]");
+});
+
+// I5 — XHR
+import { installXhrHook } from "../src/main/xhr-hook.js";
+
+function fakeXhrWindow() {
+  const sent = [];
+  class FakeXHR {
+    open(method, url, async = true) { this._args = { method, url, async }; }
+    send(body) { sent.push({ ...this._args, body }); }
+  }
+  return { win: { XMLHttpRequest: FakeXHR, location: { href: "https://x.test/" } }, sent };
+}
+
+test("xhr: matching send is redacted before the real send", async () => {
+  const { win, sent } = fakeXhrWindow();
+  const errors = [];
+  installXhrHook({ win, adapters: [testAdapter], redactTexts: upper, onError: (e) => errors.push(e) });
+  const xhr = new win.XMLHttpRequest();
+  xhr.open("POST", "/send");
+  xhr.send(JSON.stringify({ prompt: "my SECRET" }));
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(JSON.parse(sent[0].body).prompt, "my [API_KEY_1]");
+  assert.equal(errors.length, 0);
+});
+
+test("xhr: non-matching send goes through synchronously untouched", () => {
+  const { win, sent } = fakeXhrWindow();
+  installXhrHook({ win, adapters: [testAdapter], redactTexts: upper, onError: () => {} });
+  const xhr = new win.XMLHttpRequest();
+  xhr.open("POST", "/other");
+  xhr.send("SECRET");
+  assert.equal(sent[0].body, "SECRET");
+});
+
+test("xhr: redaction failure sends original and reports", async () => {
+  const { win, sent } = fakeXhrWindow();
+  const errors = [];
+  installXhrHook({ win, adapters: [testAdapter], redactTexts: async () => { throw new Error("timeout"); }, onError: (e) => errors.push(e) });
+  const xhr = new win.XMLHttpRequest();
+  xhr.open("POST", "/send");
+  xhr.send('{"prompt":"SECRET"}');
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(sent[0].body, '{"prompt":"SECRET"}');
+  assert.equal(errors.length, 1);
+});
+
+test("xhr: synchronous matching request is sent untouched with a warning", () => {
+  const { win, sent } = fakeXhrWindow();
+  const errors = [];
+  installXhrHook({ win, adapters: [testAdapter], redactTexts: upper, onError: (e) => errors.push(e) });
+  const xhr = new win.XMLHttpRequest();
+  xhr.open("POST", "/send", false);
+  xhr.send('{"prompt":"SECRET"}');
+  assert.equal(sent[0].body, '{"prompt":"SECRET"}');
+  assert.equal(errors.length, 1);
+});
+
 
 // --- bridge ---
 

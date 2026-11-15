@@ -8,7 +8,9 @@ export class Vault {
     this.counters = { ...(state?.counters ?? {}) };
   }
 
+  // avoid: text the fake must not appear in, or a predicate (s) => boolean.
   standInFor(original, category, style, avoid = "") {
+    const isAvoided = typeof avoid === "function" ? avoid : (s) => avoid.includes(s);
     const existing = this.byOriginal[original];
     if (existing !== undefined) return existing;
 
@@ -19,7 +21,7 @@ export class Vault {
       standIn = style === "fake" ? fakeFor(category, n) : tokenFor(category, n);
     } while (
       this.byStandIn[standIn] !== undefined ||
-      (style === "fake" && avoid.includes(standIn))
+      (style === "fake" && isAvoided(standIn))
     );
 
     this.byOriginal[original] = standIn;
@@ -29,6 +31,12 @@ export class Vault {
 
   entries() {
     return Object.entries(this.byStandIn);
+  }
+
+  // Empty mappings, same counters: stand-ins already sent out (and still in
+  // old chats) are never reissued for a different original.
+  cleared() {
+    return new Vault({ counters: this.counters });
   }
 
   toJSON() {
