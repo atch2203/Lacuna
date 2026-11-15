@@ -25,15 +25,19 @@ function makeAvoid(text) {
   };
 }
 
-// Non-overlapping, sorted sensitive spans; no vault access.
-export function findSensitive(text, detectors) {
+function detectedSpans(text, detectors) {
   const spans = [];
   for (const detector of detectors) {
     for (const span of detector.find(text)) {
       if (span.end > span.start) spans.push({ ...span, detector });
     }
   }
-  return resolveOverlaps(spans).map(({ start, end, detector }) => ({
+  return resolveOverlaps(spans);
+}
+
+// Non-overlapping, sorted sensitive spans; no vault access.
+export function findSensitive(text, detectors) {
+  return detectedSpans(text, detectors).map(({ start, end, detector }) => ({
     start,
     end,
     category: detector.category,
@@ -41,19 +45,39 @@ export function findSensitive(text, detectors) {
   }));
 }
 
+function matchCaseOf(word, original) {
+  if (original === original.toLowerCase()) return word.toLowerCase();
+  if (original === original.toUpperCase()) return word.toUpperCase();
+  return word;
+}
+
+// A name part maps to the same word of the full name's fake, so "Jane" and
+// "Doe" agree with "Jane Doe" whichever appears first.
+function partStandIn(original, detector, vault, avoid) {
+  const full = vault.standInFor(detector.fullTerm, detector.category, detector.style, avoid);
+  const word = full.split(" ")[detector.partIndex];
+  if (!word) return vault.standInFor(original, detector.category, detector.style, avoid);
+  const standIn = matchCaseOf(word, original);
+  vault.link(original, standIn);
+  return standIn;
+}
+
 // Like findSensitive, plus stand-ins assigned left-to-right (so numbering
 // follows reading order).
 // Spans that already are stand-ins (e.g. a fake pasted back from a reply)
 // are left alone, so a fake never gets its own fake.
 export function findRedactions(text, detectors, vault) {
-  const spans = findSensitive(text, detectors).filter(({ start, end }) => !vault.isStandIn?.(text.slice(start, end)));
+  const spans = detectedSpans(text, detectors).filter(({ start, end }) => !vault.isStandIn?.(text.slice(start, end)));
   if (spans.length === 0) return [];
   const avoid = makeAvoid(text);
-  return spans.map(({ start, end, category, style }) => ({
-    start,
-    end,
-    standIn: vault.standInFor(text.slice(start, end), category, style, avoid),
-  }));
+  return spans.map(({ start, end, detector }) => {
+    const original = text.slice(start, end);
+    const standIn =
+      detector.fullTerm !== undefined
+        ? partStandIn(original, detector, vault, avoid)
+        : vault.standInFor(original, detector.category, detector.style, avoid);
+    return { start, end, standIn };
+  });
 }
 
 export function redact(text, detectors, vault) {

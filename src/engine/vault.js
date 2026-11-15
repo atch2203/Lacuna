@@ -35,6 +35,14 @@ export class Vault {
     return standIn;
   }
 
+  // Record a stand-in chosen elsewhere (e.g. a name part derived from the
+  // full name's fake). Existing mappings win.
+  link(original, standIn) {
+    if (this.byOriginal[original] !== undefined || this.byStandIn[standIn] !== undefined) return;
+    this.byOriginal[original] = standIn;
+    this.byStandIn[standIn] = original;
+  }
+
   // True when text is one of this vault's stand-ins (so it isn't re-redacted).
   isStandIn(text) {
     return this.byStandIn[text] !== undefined;
