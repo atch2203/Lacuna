@@ -1,0 +1,1 @@
+{"action":"next","messages":[{"id":"bbbbbbbb-0000-4000-8000-000000000000","author":{"role":"user"},"content":{"content_type":"multimodal_text","parts":[{"content_type":"image_asset_pointer","asset_pointer":"file-service://file-abc"},"what is in this image, jane@corp.io?"]},"metadata":{}}],"parent_message_id":"x","model":"auto"}
