@@ -42,3 +42,24 @@ test("non-person terms don't split into parts", () => {
   const d = makeDictionaryDetectors([{ term: "Project Falcon", category: "OTHER" }]);
   assert.equal(redact("Falcon launched", d, v), "Falcon launched");
 });
+
+test("case variants of a dictionary term share one fake (case matched)", () => {
+  const v = new Vault();
+  const out = redact("Jane Doe, jane doe, JANE DOE", dets(), v);
+  const [a, b, c] = out.split(", ");
+  assert.equal(b, a.toLowerCase());
+  assert.equal(c, a.toUpperCase());
+});
+
+test("lowercase full name agrees with lowercase parts", () => {
+  const v = new Vault();
+  const full = redact("ask jane doe", dets(), v).slice(4);
+  assert.equal(redact("ask jane", dets(), v), `ask ${full.split(" ")[0]}`);
+});
+
+test("case variants restore to the spelling that was used", () => {
+  const v = new Vault();
+  const input = "Jane Doe and jane doe";
+  const out = redact(input, dets(), v);
+  assert.equal(makeRestorer(v.entries())(out), input);
+});

@@ -30,7 +30,8 @@ export function makeDictionaryDetectors(entries) {
     .filter((e) => e.term && e.term.trim())
     .flatMap(({ term, category }) => {
       const t = term.trim().replace(/\s+/g, " ");
-      const detectors = [wholeWordDetector(`dict:${t}`, t, category)];
+      // canonical: every capitalisation of the term shares the term's fake.
+      const detectors = [wholeWordDetector(`dict:${t}`, t, category, { canonical: t })];
       const parts = t.split(" ");
       if (category === "PERSON" && parts.length > 1) {
         parts.forEach((part, partIndex) => {
