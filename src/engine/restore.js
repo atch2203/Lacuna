@@ -6,7 +6,7 @@ function escapeRegExp(s) {
 
 // entries: Array<[standIn, original]>
 export function makeRestorer(entries) {
-  if (entries.length === 0) return (text) => text;
+  if (entries.length === 0) return Object.assign((text) => text, { standInsIn: () => [] });
   const map = new Map(entries);
   // Longest first so "[CARD_10]" wins over its prefix "[CARD_1]".
   const alternation = [...map.keys()]
@@ -15,5 +15,8 @@ export function makeRestorer(entries) {
     .join("|");
   const re = new RegExp(alternation, "g");
   // Function replacer: originals are inserted literally ("$&" etc. not expanded).
-  return (text) => text.replace(re, (m) => map.get(m));
+  const restore = (text) => text.replace(re, (m) => map.get(m));
+  // Stand-ins present in text (for demo notices).
+  restore.standInsIn = (text) => text.match(re) ?? [];
+  return restore;
 }

@@ -2,6 +2,7 @@
 // the page's own listeners run, redacts them, then re-dispatches the event
 // with the redacted files. Fails open: on error the original file is used.
 import { classifyFile } from "../docs/router.js";
+import { fileNotice } from "../demo/notices.js";
 
 const log = (...args) => console.debug("[llm-redactor files]", ...args);
 
@@ -53,7 +54,7 @@ export function startFileInterceptor({
           } else if (out.status === "unsupported") {
             update("warn", `${file.name} attached unredacted (unsupported type)`, 0);
           } else {
-            update("info", `Redacted ${out.count} item${out.count === 1 ? "" : "s"} in ${file.name}`, 4000);
+            update("info", fileNotice(file.name, out.count), 6000);
           }
           return out.file;
         } catch (err) {

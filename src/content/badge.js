@@ -15,7 +15,8 @@ function ensureStack() {
         display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
       }
       .pill {
-        max-width: 360px; padding: 10px 14px; border-radius: 999px; cursor: pointer;
+        max-width: 380px; padding: 10px 14px; border-radius: 14px; cursor: pointer;
+        white-space: pre-line; overflow-wrap: anywhere;
         font: 13px/1.35 system-ui, sans-serif; color: #fff;
         box-shadow: 0 4px 16px rgba(0,0,0,.25);
       }

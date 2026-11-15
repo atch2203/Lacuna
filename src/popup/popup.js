@@ -36,6 +36,7 @@ async function render() {
   renderGuard();
   const { vault, dictionary, settings } = await load();
   $("enabled").checked = settings.enabled;
+  $("demo").checked = settings.demoNotifications === true;
 
   const list = $("dict-list");
   list.replaceChildren(
@@ -68,6 +69,11 @@ async function removeTerm(index) {
   dictionary.splice(index, 1);
   await chrome.storage.local.set({ dictionary });
 }
+
+$("demo").addEventListener("change", async (e) => {
+  const { settings } = await load();
+  await chrome.storage.local.set({ settings: { ...settings, demoNotifications: e.target.checked } });
+});
 
 $("enabled").addEventListener("change", async (e) => {
   const { settings } = await load();

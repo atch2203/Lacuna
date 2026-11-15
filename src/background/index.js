@@ -3,7 +3,7 @@
 // tabs) can't overwrite each other's new stand-ins.
 import { PATTERN_DETECTORS } from "../engine/patterns.js";
 import { makeDictionaryDetectors } from "../engine/dictionary.js";
-import { redact, findRedactions } from "../engine/redact.js";
+import { findRedactions } from "../engine/redact.js";
 import { serialize } from "../shared/serialize.js";
 import { loadState, saveVault } from "../content/store.js";
 import { initialState, reduce, guardOf } from "../guard/share-registry.js";
@@ -21,7 +21,20 @@ const withVault = serialize(async (texts, fn, disabled) => {
   return out;
 });
 
-const redactTexts = (texts) => withVault(texts, redact, (t) => t);
+// Redacted text plus the swaps made (for demo notices).
+function redactWithSwaps(text, detectors, vault) {
+  const spans = findRedactions(text, detectors, vault);
+  const swaps = spans.map(({ start, end, standIn }) => ({ original: text.slice(start, end), standIn }));
+  let out = "";
+  let cursor = 0;
+  for (const { start, end, standIn } of spans) {
+    out += text.slice(cursor, start) + standIn;
+    cursor = end;
+  }
+  return { text: out + text.slice(cursor), swaps };
+}
+
+const redactTexts = (texts) => withVault(texts, redactWithSwaps, (t) => t.map((text) => ({ text, swaps: [] })));
 const redactSpans = (texts) => withVault(texts, findRedactions, (t) => t.map(() => []));
 
 // --- Screen-share guard registry -------------------------------------------
@@ -73,7 +86,8 @@ const HANDLERS = {
   "share-reset": shareEvent("share-reset"),
   "guard-stand-ins": (msg) => assignGuard(msg.items),
   "set-manual-guard": (msg) => updateGuard({ type: "manual", on: msg.on }).then((guard) => ({ guard })),
-  redact: (msg) => redactTexts(msg.texts).then((texts) => ({ texts })),
+  redact: (msg) =>
+    redactTexts(msg.texts).then((out) => ({ texts: out.map((o) => o.text), swaps: out.flatMap((o) => o.swaps) })),
   "redact-spans": (msg) => redactSpans(msg.texts).then((spans) => ({ spans })),
 };
 

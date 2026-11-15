@@ -3,6 +3,8 @@
 import { PATTERN_DETECTORS } from "../engine/patterns.js";
 import { makeDictionaryDetectors } from "../engine/dictionary.js";
 import { startScreenGuard } from "./screen-guard.js";
+import { guardNotice } from "../demo/notices.js";
+import { showInfoBadge } from "../content/badge.js";
 
 const SOURCE = "llm-redactor-share";
 const EMPTY = { byOriginal: {}, byStandIn: {} };
@@ -12,7 +14,22 @@ let guardVault = EMPTY; // session-only stand-ins for values first seen during a
 let detectors = PATTERN_DETECTORS;
 let enabled = true;
 let active = false;
+let reason = null;
+let demo = false;
 let guard = null;
+
+// Demo notices: top frame only; counts distinct values hidden in this page.
+const isTop = window === window.top;
+const hidden = new Set();
+let hiddenTimer = null;
+function noteHidden(original) {
+  if (!demo || !isTop || hidden.has(original)) return;
+  hidden.add(original);
+  hiddenTimer ??= setTimeout(() => {
+    hiddenTimer = null;
+    if (guard) showInfoBadge(guardNotice({ active: true, reason, hidden: hidden.size }), { timeoutMs: 6000 });
+  }, 1500);
+}
 
 const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => {});
 
@@ -36,7 +53,10 @@ window.addEventListener("pagehide", () => {
 function start() {
   guard = startScreenGuard({
     getDetectors: () => detectors,
-    lookup: (o) => vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o],
+    lookup: (o) => {
+      noteHidden(o);
+      return vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o];
+    },
     isStandIn: (s) => vault.byStandIn?.[s] !== undefined || guardVault.byStandIn?.[s] !== undefined,
     requestStandIns: (items) => send({ type: "guard-stand-ins", items }),
   });
@@ -47,6 +67,8 @@ function apply({ restart = false } = {}) {
   if (guard && (!shouldRun || restart)) {
     guard.stop();
     guard = null;
+    if (!shouldRun && demo && isTop) showInfoBadge(guardNotice({ active: false }), { timeoutMs: 6000 });
+    if (!shouldRun) hidden.clear();
   }
   if (shouldRun && !guard) start();
 }
@@ -63,6 +85,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     if (changes.guard) {
       active = Boolean(changes.guard.newValue?.active);
+      reason = changes.guard.newValue?.reason ?? null;
       apply();
     }
     return;
@@ -70,6 +93,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.settings) {
     enabled = changes.settings.newValue?.enabled !== false;
+    demo = changes.settings.newValue?.demoNotifications === true;
     apply();
   }
   if (changes.dictionary) {
@@ -89,11 +113,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const localP = chrome.storage.local.get(["vault", "dictionary", "settings"]);
   const session = await sessionP;
   active = Boolean(session.guard?.active);
+  reason = session.guard?.reason ?? null;
   guardVault = session.guardVault ?? EMPTY;
   apply();
   const local = await localP;
   vault = local.vault ?? EMPTY;
   setDictionary(local.dictionary);
   enabled = local.settings?.enabled !== false;
+  demo = local.settings?.demoNotifications === true;
   apply({ restart: Boolean(guard) });
 })();
