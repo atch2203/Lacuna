@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "LLM Redactor",
+  "version": "0.1.0",
+  "description": "Redacts sensitive data from prompts sent to web LLM chats and restores it on screen.",
+  "permissions": ["storage"],
+  "action": { "default_popup": "popup.html", "default_title": "LLM Redactor" },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*", "https://gemini.google.com/*"],
+      "js": ["main.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*", "https://gemini.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}
