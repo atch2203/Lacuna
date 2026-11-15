@@ -3,22 +3,12 @@
 // (here `standIn` holds the ORIGINAL to write back). Pure.
 //
 // entries: Array<[standIn, original]>
-
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+import { makeStandInMatcher } from "../engine/restore.js";
 
 export function restoreSpansFor(texts, entries) {
   if (entries.length === 0) return texts.map(() => []);
-  const map = new Map(entries);
-  const re = new RegExp(
-    [...map.keys()]
-      .sort((a, b) => b.length - a.length)
-      .map(escapeRegExp)
-      .join("|"),
-    "g",
-  );
+  const { regex, resolve } = makeStandInMatcher(entries);
   return texts.map((text) =>
-    [...text.matchAll(re)].map((m) => ({ start: m.index, end: m.index + m[0].length, standIn: map.get(m[0]) })),
+    [...text.matchAll(regex)].map((m) => ({ start: m.index, end: m.index + m[0].length, standIn: resolve(m[0]) })),
   );
 }

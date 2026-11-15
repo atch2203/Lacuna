@@ -111,3 +111,7 @@ test("error responses are not touched", async () => {
   installFileRestorer({ win, restore: async () => assert.fail("not called") });
   assert.equal(await win.fetch("x"), original);
 });
+
+test("restoreSpansFor matches name fakes regardless of case", () => {
+  assert.deepEqual(restoreSpansFor(["Dear Reese Grant,"], [["reese grant", "barry bonds"]]), [[{ start: 5, end: 16, standIn: "Barry Bonds" }]]);
+});
