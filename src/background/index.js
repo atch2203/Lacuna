@@ -26,6 +26,8 @@ const redactSpans = (texts) => withVault(texts, findRedactions, (t) => t.map(() 
 // --- Screen-share guard registry -------------------------------------------
 // Content scripts read `guard` from storage.session; allow them to.
 chrome.storage.session.setAccessLevel?.({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+// Wake at browser start so the access level is set before pages ask.
+chrome.runtime.onStartup.addListener(() => {});
 
 const updateGuard = serialize(async (event) => {
   const stored = await chrome.storage.session.get(["shares", "manualGuard"]);

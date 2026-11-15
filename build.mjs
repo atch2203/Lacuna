@@ -12,6 +12,8 @@ const scripts = {
     content: "src/content/index.js",
     popup: "src/popup/popup.js",
     background: "src/background/index.js",
+    "guard-main": "src/guard/main.js",
+    "guard-content": "src/guard/content.js",
   },
   format: "iife",
 };

@@ -20,7 +20,20 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
+const GUARD_LABELS = { share: "Active — sharing", manual: "Active — manual" };
+
+async function renderGuard() {
+  const { guard, manualGuard } = await chrome.storage.session.get(["guard", "manualGuard"]);
+  $("guard-status").textContent = guard?.active ? GUARD_LABELS[guard.reason] : "Off";
+  $("guard-manual").checked = Boolean(manualGuard);
+}
+
+$("guard-manual").addEventListener("change", (e) => {
+  chrome.runtime.sendMessage({ type: "set-manual-guard", on: e.target.checked });
+});
+
 async function render() {
+  renderGuard();
   const { vault, dictionary, settings } = await load();
   $("enabled").checked = settings.enabled;
 
@@ -87,6 +100,7 @@ $("clear-vault").addEventListener("click", async () => {
 
 chrome.storage.onChanged.addListener((_, area) => {
   if (area === "local") render();
+  if (area === "session") renderGuard();
 });
 
 render();

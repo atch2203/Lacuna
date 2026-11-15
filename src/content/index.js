@@ -11,6 +11,9 @@ import { redactInFrame } from "./docframe-client.js";
 let restore = makeRestorer([]);
 let restorer = null;
 let enabled = true;
+// While the screen guard is active, stand-ins stay on screen: don't restore.
+let guardActive = false;
+const identity = (text) => text;
 
 function applyState(state) {
   enabled = state.settings.enabled;
@@ -31,7 +34,18 @@ onFailure(window, (reason) => {
   showWarningBadge(`Redaction failed — message sent unredacted: ${reason}`);
 });
 
-restorer = startDomRestorer({ getRestore: () => restore });
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "session" || !changes.guard) return;
+  const was = guardActive;
+  guardActive = Boolean(changes.guard.newValue?.active);
+  if (was && !guardActive) restorer?.refresh();
+});
+chrome.storage.session
+  .get("guard")
+  .then(({ guard }) => (guardActive = Boolean(guard?.active)))
+  .catch(() => {});
+
+restorer = startDomRestorer({ getRestore: () => (guardActive ? identity : restore) });
 
 startFileInterceptor({
   processFile: redactInFrame,
