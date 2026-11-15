@@ -4,7 +4,7 @@ import { makeRestorer } from "../engine/restore.js";
 import { serveRedaction, onFailure } from "../shared/bridge.js";
 import { loadState, onStateChange } from "./store.js";
 import { startDomRestorer } from "./dom-restorer.js";
-import { showWarningBadge, showInfoBadge } from "./badge.js";
+import { showWarningBadge, showInfoBadge, clearNotices } from "./badge.js";
 import { startFileInterceptor } from "./file-interceptor.js";
 import { redactInFrame } from "./docframe-client.js";
 import { sentNotice, restoredNotice, fileNotice } from "../demo/notices.js";
@@ -33,7 +33,12 @@ serveRedaction(window, async (texts) => {
   const res = await chrome.runtime.sendMessage({ type: "redact", texts });
   if (!res || res.error) throw new Error(res?.error ?? "no response from service worker");
   if (demo && res.swaps?.length) {
-    showInfoBadge(sentNotice(location.host, res.swaps, { guardActive }), { timeoutMs: 6000 });
+    try {
+      // Unknown guard state counts as active: never risk originals on a shared screen.
+      showInfoBadge(sentNotice(location.host, res.swaps, { guardActive: guardActive || !guardKnown }), { timeoutMs: 6000 });
+    } catch {
+      // A notice must never turn a successful redaction into a failure.
+    }
   }
   return res.texts;
 });
@@ -46,6 +51,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "session" || !changes.guard) return;
   const was = guardActive;
   guardActive = Boolean(changes.guard.newValue?.active);
+  if (!was && guardActive) clearNotices();
   if (was && !guardActive) restorer?.refresh();
 });
 chrome.storage.session

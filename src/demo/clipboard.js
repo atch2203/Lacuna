@@ -9,17 +9,28 @@ export function restoreClipboardText(text, entries) {
   return { text: count ? restore(text) : text, count };
 }
 
-// copy event (window bubble phase, after page handlers). If the page already
-// set clipboard text, restore that; otherwise restore the selection.
-// restore(text) → { text, count }. Returns the number of values restored.
-export function handleCopy(event, { getSelectionText, restore }) {
-  const pageText = event.defaultPrevented ? event.clipboardData?.getData("text/plain") : "";
-  const source = pageText || getSelectionText();
-  const { text, count } = restore(source ?? "");
-  if (!count) return 0;
-  event.clipboardData.setData("text/plain", text);
+// copy event, handled after the page's own handlers. If the page set
+// clipboard data, restore that (text and html); if it blocked copying
+// (preventDefault without data), leave it blocked; otherwise restore the
+// selection. restore(text) → { text, count }. Returns values restored.
+export function handleCopy(event, { getSelectionText, getSelectionHtml = () => "", restore }) {
+  let plain;
+  let html;
+  if (event.defaultPrevented) {
+    plain = event.clipboardData?.getData("text/plain") ?? "";
+    html = event.clipboardData?.getData("text/html") ?? "";
+    if (!plain && !html) return 0;
+  } else {
+    plain = getSelectionText() ?? "";
+    html = getSelectionHtml() ?? "";
+  }
+  const p = restore(plain);
+  const h = restore(html);
+  if (!p.count && !h.count) return 0;
+  event.clipboardData.setData("text/plain", p.text);
+  if (html) event.clipboardData.setData("text/html", h.text);
   event.preventDefault();
-  return count;
+  return Math.max(p.count, h.count);
 }
 
 // PAGE side (MAIN world): wrap navigator.clipboard so site "copy" buttons go
@@ -41,16 +52,21 @@ export function wrapClipboard(clipboard, delegate) {
 
   if (originalWrite) {
     clipboard.write = async (items) => {
-      const parts = await Promise.all(
-        [...items].map(async (item) => {
-          const out = {};
-          for (const type of item.types) {
-            const blob = await item.getType(type);
-            out[type] = type === "text/plain" || type === "text/html" ? await blob.text() : blob;
-          }
-          return out;
-        }),
-      );
+      let parts;
+      try {
+        parts = await Promise.all(
+          [...items].map(async (item) => {
+            const out = {};
+            for (const type of item.types) {
+              const blob = await item.getType(type);
+              out[type] = type === "text/plain" || type === "text/html" ? await blob.text() : blob;
+            }
+            return out;
+          }),
+        );
+      } catch {
+        return originalWrite(items); // never break the site's copy button
+      }
       if (await delegate({ kind: "items", items: parts }).catch(() => false)) return undefined;
       return originalWrite(items);
     };

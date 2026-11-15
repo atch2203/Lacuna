@@ -5,7 +5,7 @@ import { makeDictionaryDetectors } from "../engine/dictionary.js";
 import { startScreenGuard } from "./screen-guard.js";
 import { guardNotice, copiedNotice } from "../demo/notices.js";
 import { restoreClipboardText, handleCopy, performClipboardWrite } from "../demo/clipboard.js";
-import { showInfoBadge } from "../content/badge.js";
+import { showInfoBadge, clearNotices } from "../content/badge.js";
 
 const SOURCE = "llm-redactor-share";
 const EMPTY = { byOriginal: {}, byStandIn: {} };
@@ -18,6 +18,10 @@ let active = false;
 let reason = null;
 let demo = false;
 let guard = null;
+// Stand-ins the guard wrote into THIS document (standIn → original). Off the
+// AI sites, the ghost clipboard restores only these: values this page
+// already showed, so a page can't plant "[API_KEY_1]" to fetch a real key.
+const ownStandIns = new Map();
 
 // Demo notices: top frame only; counts distinct values hidden in this page.
 const isTop = window === window.top;
@@ -56,7 +60,9 @@ function start() {
     getDetectors: () => detectors,
     lookup: (o) => {
       noteHidden(o);
-      return vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o];
+      const standIn = vault.byOriginal?.[o] ?? guardVault.byOriginal?.[o];
+      if (standIn !== undefined) ownStandIns.set(standIn, o);
+      return standIn;
     },
     isStandIn: (s) => vault.byStandIn?.[s] !== undefined || guardVault.byStandIn?.[s] !== undefined,
     requestStandIns: (items) => send({ type: "guard-stand-ins", items }),
@@ -71,7 +77,10 @@ function apply({ restart = false } = {}) {
     if (!shouldRun && demo && isTop) showInfoBadge(guardNotice({ active: false }), { timeoutMs: 6000 });
     if (!shouldRun) hidden.clear();
   }
-  if (shouldRun && !guard) start();
+  if (shouldRun && !guard) {
+    clearNotices();
+    start();
+  }
 }
 
 function setDictionary(dictionary) {
@@ -131,23 +140,60 @@ chrome.storage.onChanged.addListener((changes, area) => {
 const CLIP = "llm-redactor-clip";
 const AI_HOSTS = new Set(["claude.ai", "chatgpt.com", "gemini.google.com"]);
 const clipboardApplies = () => enabled && (AI_HOSTS.has(location.hostname) || active);
-const clipEntries = () => [...Object.entries(vault.byStandIn ?? {}), ...Object.entries(guardVault.byStandIn ?? {})];
+const isAiHost = AI_HOSTS.has(location.hostname);
+// On AI sites the page can already read originals (on-screen restore writes
+// them into the DOM), so all stand-ins apply there; elsewhere only this page's.
+const clipEntries = () =>
+  isAiHost
+    ? [...Object.entries(vault.byStandIn ?? {}), ...Object.entries(guardVault.byStandIn ?? {})]
+    : [...ownStandIns];
 const restoreClip = (text) => restoreClipboardText(text, clipEntries());
 
 function noteCopied(count) {
   if (count && demo && isTop) showInfoBadge(copiedNotice(count), { timeoutMs: 6000 });
 }
 
-window.addEventListener("copy", (event) => {
-  if (!clipboardApplies()) return;
-  noteCopied(handleCopy(event, { getSelectionText: () => String(window.getSelection() ?? ""), restore: restoreClip }));
-});
+function selectionHtml() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return "";
+  const div = document.createElement("div");
+  for (let i = 0; i < sel.rangeCount; i++) div.append(sel.getRangeAt(i).cloneContents());
+  return div.innerHTML;
+}
+
+// Run after the page's own copy handlers (so page-set data is honoured) and
+// last (so no page listener can read the restored data): when a copy starts
+// (window, capture), add a one-shot window bubble listener — it lands at the
+// end of the list.
+window.addEventListener(
+  "copy",
+  () => {
+    if (!clipboardApplies()) return;
+    window.addEventListener(
+      "copy",
+      (event) => {
+        if (!clipboardApplies()) return;
+        noteCopied(
+          handleCopy(event, {
+            getSelectionText: () => String(window.getSelection() ?? ""),
+            getSelectionHtml: selectionHtml,
+            restore: restoreClip,
+          }),
+        );
+      },
+      { once: true },
+    );
+  },
+  true,
+);
 
 window.addEventListener("message", async (event) => {
   const msg = event.data;
   if (event.source !== window || msg?.source !== CLIP || msg.type !== "write") return;
   let handled = 0;
-  if (clipboardApplies()) {
+  // Only right after a real user action (a site copy button), never on a
+  // page's own initiative.
+  if (clipboardApplies() && navigator.userActivation?.isActive) {
     try {
       handled = await performClipboardWrite(msg.request, { restore: restoreClip, clipboard: navigator.clipboard });
     } catch {

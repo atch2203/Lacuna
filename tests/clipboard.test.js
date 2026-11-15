@@ -110,3 +110,46 @@ test("performClipboardWrite rebuilds items with restored text/plain and text/htm
   assert.equal(await parts["text/html"].text(), "<b>AKIAIOSFODNN7EXAMPLE</b>");
   assert.equal(parts["image/png"], png);
 });
+
+// --- final review ------------------------------------------------------------
+test("I3: page-set text/html is restored too", () => {
+  const data = new Map([["text/plain", "[API_KEY_1]"], ["text/html", "<b>[API_KEY_1]</b>"]]);
+  const ev = {
+    defaultPrevented: true,
+    clipboardData: { getData: (t) => data.get(t) ?? "", setData: (t, v) => data.set(t, v) },
+    preventDefault() {},
+  };
+  handleCopy(ev, { getSelectionText: () => "", restore });
+  assert.equal(data.get("text/html"), "<b>AKIAIOSFODNN7EXAMPLE</b>");
+});
+
+test("I3: selection copy keeps formatting (restored html from the selection)", () => {
+  const data = new Map();
+  const ev = {
+    defaultPrevented: false,
+    clipboardData: { getData: (t) => data.get(t) ?? "", setData: (t, v) => data.set(t, v) },
+    preventDefault() {},
+  };
+  handleCopy(ev, { getSelectionText: () => "key [API_KEY_1]", getSelectionHtml: () => "key <i>[API_KEY_1]</i>", restore });
+  assert.equal(data.get("text/html"), "key <i>AKIAIOSFODNN7EXAMPLE</i>");
+});
+
+test("M4: page blocked copying (preventDefault, no data) → left blocked", () => {
+  const data = new Map();
+  const ev = {
+    defaultPrevented: true,
+    clipboardData: { getData: () => "", setData: (t, v) => data.set(t, v) },
+    preventDefault() {},
+  };
+  assert.equal(handleCopy(ev, { getSelectionText: () => "[API_KEY_1]", restore }), 0);
+  assert.equal(data.size, 0);
+});
+
+test("M2: write() falls back to the original when reading items fails", async () => {
+  const written = [];
+  const clipboard = { write: async (items) => written.push(items) };
+  wrapClipboard(clipboard, async () => assert.fail("not reached"));
+  const bad = { types: ["text/plain"], getType: async () => { throw new Error("boom"); } };
+  await clipboard.write([bad]);
+  assert.equal(written.length, 1);
+});

@@ -55,3 +55,9 @@ export function showWarningBadge(message) {
 export function showInfoBadge(message, { timeoutMs = 4000 } = {}) {
   return show("info", message, timeoutMs);
 }
+
+// Remove every notice (e.g. when the screen guard turns on, so nothing with an
+// original value stays on a shared screen).
+export function clearNotices() {
+  stack?.replaceChildren();
+}
