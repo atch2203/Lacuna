@@ -7,14 +7,34 @@ const READY_AFTER_LOAD_MS = 5_000;
 const log = (...args) => console.debug("[llm-redactor docframe]", ...args);
 
 let framePromise = null;
+let currentFrame = null;
 const pending = new Map();
 
-function getFrame() {
-  framePromise ??= new Promise((resolve, reject) => {
+// Pages may remove nodes they don't own (e.g. on re-render), so re-create the
+// frame whenever the cached one is no longer connected.
+async function getFrame() {
+  if (currentFrame && !currentFrame.isConnected) {
+    log("frame was removed from the page; re-creating");
+    framePromise = null;
+    currentFrame = null;
+  }
+  framePromise ??= createFrame();
+  const iframe = await framePromise;
+  if (!iframe.isConnected || !iframe.contentWindow) {
+    framePromise = null;
+    currentFrame = null;
+    return getFrame();
+  }
+  return iframe;
+}
+
+function createFrame() {
+  const promise = new Promise((resolve, reject) => {
     const iframe = document.createElement("iframe");
     iframe.src = chrome.runtime.getURL("docframe.html");
     iframe.setAttribute("data-llm-redactor", "docframe");
     iframe.style.display = "none";
+    currentFrame = iframe;
     const timer = setTimeout(() => reject(new Error("document frame did not load")), TIMEOUT_MS);
     let ready = false;
     iframe.addEventListener("load", () => {
@@ -44,10 +64,13 @@ function getFrame() {
         pending.delete(msg.id);
       }
     });
-    document.documentElement.appendChild(iframe);
+    (document.body ?? document.documentElement).appendChild(iframe);
   });
-  framePromise.catch(() => (framePromise = null));
-  return framePromise;
+  promise.catch(() => {
+    framePromise = null;
+    currentFrame = null;
+  });
+  return promise;
 }
 
 // → { status: "redacted"|"unsupported"|"no-text", file: File, count }
