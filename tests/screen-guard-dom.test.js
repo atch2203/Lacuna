@@ -80,3 +80,23 @@ test("input value set from code is blurred (inline style) and unblurred on stop"
   g.stop();
   assert.equal(input.style.getPropertyValue("filter"), "");
 });
+
+test("pasting a real value into a textarea during a share blurs it", async () => {
+  document.body.innerHTML = `<textarea id="t"></textarea>`;
+  const g = start();
+  const ta = document.getElementById("t");
+  ta.value = `here is ${KEY}`; // what a paste does
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+  assert.match(ta.style.getPropertyValue("filter"), /blur/);
+  assert.equal(ta.value, `here is ${KEY}`, "editable content is never rewritten");
+  g.stop();
+});
+
+test("pasted text rendered as page text is guarded", async () => {
+  document.body.innerHTML = `<div id="out"></div>`;
+  const g = start();
+  document.getElementById("out").append(document.createTextNode(`pasted ${KEY}`));
+  await flush();
+  assert.equal(document.getElementById("out").textContent, "pasted [API_KEY_1]");
+  g.stop();
+});
